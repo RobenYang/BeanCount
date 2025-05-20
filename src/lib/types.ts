@@ -34,7 +34,7 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
   { value: 'SALE', label: '销售' },
   { value: 'SPOILAGE', label: '损耗' },
   { value: 'INTERNAL_USE', label: '内部使用' },
-  { value: 'ADJUSTMENT_DECREASE', label: '库存调整 (减少)' },
+  { value: 'ADJUSTMENT_DECREASE', label: '误操作修正' }, // Changed label here
   // Note: ADJUSTMENT_INCREASE is not typically an "outflow" reason for filtering AI summary,
   // but kept for structural consistency if needed elsewhere.
 ];
@@ -78,4 +78,3 @@ export interface ChartDataPoint {
   quantity: number;   // Stock quantity
   [key: string]: number | string; // Allows for dynamic data keys
 }
-
