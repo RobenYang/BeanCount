@@ -218,15 +218,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       setProducts(createdProducts);
 
       const sampleBatchesData = [
-        // Batches for Arabica Coffee Beans
+        // Batches for Arabica Coffee Beans (INGREDIENT)
         { productId: createdProducts[0].id, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 150 },
         { productId: createdProducts[0].id, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 145 },
-        // Batches for Whole Milk
+        // Batches for Whole Milk (INGREDIENT)
         { productId: createdProducts[1].id, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 12 },
-        // Batches for Vanilla Syrup
+        // Batches for Vanilla Syrup (INGREDIENT)
         { productId: createdProducts[2].id, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 80 },
-        // Batches for Mugs (Non-ingredient)
-        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, // Non-ingredients can still have a "production" or intake date
+        // Batches for Mugs (NON_INGREDIENT)
+        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 },
       ];
 
       const createdBatches: Batch[] = [];
@@ -236,19 +236,19 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         const product = createdProducts.find(p => p.id === b_data.productId);
         if (!product) throw new Error("Sample product not found for batch");
         
-        const intakeDate = addDays(new Date(), b_data.productionDateOffset); // Using productionDateOffset as intake date
+        const intakeDate = addDays(new Date(), b_data.productionDateOffset); 
         const batchCreatedAt = formatISO(intakeDate); 
 
         let productionDateIso: string | null = null;
         let expiryDateIso: string | null = null;
 
         if (product.category === 'INGREDIENT') {
-          productionDateIso = formatISO(intakeDate); // Assume production date is same as intake date for sample
+          productionDateIso = formatISO(intakeDate); 
           if (product.shelfLifeDays) {
             expiryDateIso = formatISO(addDays(intakeDate, product.shelfLifeDays));
           }
         } else { // NON_INGREDIENT
-          productionDateIso = null; // Or intakeDate if desired to track manufacturing date of non-food
+          productionDateIso = b_data.productionDateOffset ? formatISO(intakeDate) : null; 
           expiryDateIso = null;
         }
 
@@ -286,7 +286,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             productName: newBatch.productName,
             batchId: newBatch.id,
             type: 'OUT' as TransactionType,
-            quantity: quantityOut,
+            quantity: quantityOut, // This is a positive number representing the amount that went out
             timestamp: formatISO(addDays(intakeDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
             unitCostAtTransaction: newBatch.unitCost,
@@ -329,3 +329,5 @@ export const useInventory = () => {
   }
   return context;
 };
+
+    
