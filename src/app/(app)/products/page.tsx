@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings } from "lucide-react"; // Removed Edit
+import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
@@ -15,6 +15,7 @@ import NextImage from "next/image";
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
+import { EditProductForm } from "@/components/forms/EditProductForm"; // Import EditProductForm
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -40,7 +41,7 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
           <TableRow>
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">生产日期</TableHead>}
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">过期日期</TableHead>}
-            {productCategory === 'NON_INGREDIENT' && <TableHead className="text-xs">入库日期</TableHead>}
+            {productCategory === 'NON_INGREDIENT' && <TableHead className="text-xs">入库/生产日期</TableHead>}
             <TableHead className="text-xs text-right">初始数量</TableHead>
             <TableHead className="text-xs text-right">当前数量</TableHead>
             <TableHead className="text-xs text-right">单位成本 (¥)</TableHead>
@@ -63,6 +64,8 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 if (daysToExpiry <= expiryWarningDays) expiryBadgeVariant = "outline";
               }
             }
+            
+            const displayDate = productCategory === 'NON_INGREDIENT' ? batch.productionDate || batch.createdAt : batch.productionDate;
 
             return (
               <TableRow key={batch.id}>
@@ -84,7 +87,7 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 )}
                 {productCategory === 'NON_INGREDIENT' && (
                      <TableCell className="text-xs">
-                        {batch.createdAt ? format(parseISO(batch.createdAt), "yyyy-MM-dd") : 'N/A'}
+                        {displayDate ? format(parseISO(displayDate), "yyyy-MM-dd") : 'N/A'}
                      </TableCell>
                 )}
                 <TableCell className="text-xs text-right">{batch.initialQuantity} {unit}</TableCell>
@@ -100,8 +103,18 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
   );
 }
 
-function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onArchive: (id: string) => void, onUnarchive: (id: string) => void }) {
-  const { getProductStockDetails, appSettings } = useInventory(); // Added appSettings
+function ProductRow({ 
+    product, 
+    onArchive, 
+    onUnarchive,
+    onEdit // Add onEdit prop
+}: { 
+    product: Product, 
+    onArchive: (id: string) => void, 
+    onUnarchive: (id: string) => void,
+    onEdit: (product: Product) => void // Define onEdit prop type
+}) {
+  const { getProductStockDetails, appSettings } = useInventory();
   const { totalQuantity, totalValue, batches } = getProductStockDetails(product.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -151,16 +164,20 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
       </TableCell>
       <TableCell>{product.unit}</TableCell>
       <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
+      <TableCell className="text-right">{product.lowStockThreshold}</TableCell> {/* Display lowStockThreshold */}
       <TableCell className="text-right">{totalQuantity}</TableCell>
       <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
       <TableCell>{product.createdAt ? format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm", {locale: zhCN}) : 'N/A'}</TableCell>
-      <TableCell className="text-right">
+      <TableCell className="text-right space-x-1">
         {product.isArchived ? (
           <Button variant="ghost" size="sm" onClick={() => onUnarchive(product.id)} title="取消归档产品">
             <Undo className="mr-2 h-4 w-4" /> 取消归档
           </Button>
         ) : (
           <>
+            <Button variant="ghost" size="icon" onClick={() => onEdit(product)} title="编辑产品">
+                <Pencil className="h-4 w-4" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => onArchive(product.id)} title="归档产品">
               <Archive className="h-4 w-4" />
             </Button>
@@ -172,7 +189,7 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
   
   const detailsRow = isExpanded ? (
     <TableRow key={`${product.id}-details`}>
-      <TableCell colSpan={8}> 
+      <TableCell colSpan={9}> {/* Adjusted colSpan */}
         <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
       </TableCell>
     </TableRow>
@@ -197,11 +214,23 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
 export default function ProductsPage() {
   const { products, archiveProduct, unarchiveProduct } = useInventory();
   const [activeTab, setActiveTab] = useState("active");
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<Product | null>(null);
 
   const activeProducts = products.filter(p => !p.isArchived);
   const archivedProducts = products.filter(p => p.isArchived);
 
   const productsToDisplay = activeTab === "active" ? activeProducts : archivedProducts;
+
+  const handleOpenEditModal = (product: Product) => {
+    setProductToEdit(product);
+    setIsEditModalOpen(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setProductToEdit(null);
+    setIsEditModalOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -229,15 +258,16 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
+                    <TableHead className="text-right">预警阈值</TableHead> {/* New column */}
                     <TableHead className="text-right">库存数量</TableHead>
                     <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    <TableHead className="text-right w-[120px]">操作</TableHead> {/* Adjusted width */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {productsToDisplay.map((product) => (
-                    <ProductRow key={product.id} product={product} onArchive={archiveProduct} onUnarchive={unarchiveProduct} />
+                    <ProductRow key={product.id} product={product} onArchive={archiveProduct} onUnarchive={unarchiveProduct} onEdit={handleOpenEditModal} />
                   ))}
                 </TableBody>
               </Table>
@@ -267,15 +297,16 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
+                    <TableHead className="text-right">预警阈值</TableHead> {/* New column */}
                     <TableHead className="text-right">库存数量</TableHead>
-                     <TableHead className="text-right">库存总价值</TableHead>
+                    <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
-                    <TableHead className="text-right">操作</TableHead>
+                    <TableHead className="text-right w-[120px]">操作</TableHead> {/* Adjusted width */}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {productsToDisplay.map((product) => (
-                    <ProductRow key={product.id} product={product} onArchive={archiveProduct} onUnarchive={unarchiveProduct} />
+                    <ProductRow key={product.id} product={product} onArchive={archiveProduct} onUnarchive={unarchiveProduct} onEdit={handleOpenEditModal} />
                   ))}
                 </TableBody>
               </Table>
@@ -293,6 +324,11 @@ export default function ProductsPage() {
           )}
         </TabsContent>
       </Tabs>
+      <EditProductForm 
+        product={productToEdit}
+        isOpen={isEditModalOpen}
+        onClose={handleCloseEditModal}
+      />
     </div>
   );
 }

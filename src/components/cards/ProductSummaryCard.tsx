@@ -10,11 +10,11 @@ import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import NextImage from "next/image"; 
 import { Button } from "../ui/button";
-import { Archive, Package } from "lucide-react"; // Removed Edit
+import { Archive, Package } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react"; 
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; 
-import { useInventory } from "@/contexts/InventoryContext"; // Added useInventory
+import { useInventory } from "@/contexts/InventoryContext";
 
 interface ProductSummaryCardProps {
   product: Product;
@@ -31,8 +31,8 @@ function formatProductCategoryForDisplay(category: Product['category']): string 
 
 
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
-  const { appSettings } = useInventory(); // Get appSettings from context
-  const isLowStock = totalQuantity < appSettings.lowStockThreshold;
+  const { appSettings } = useInventory(); 
+  const isLowStock = totalQuantity < product.lowStockThreshold; // Use product-specific threshold
   
   const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
@@ -57,7 +57,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                 <Package className="h-5 w-5 text-primary" />
                 {product.name}
               </CardTitle>
-              <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit}</CardDescription>
+              <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit} (阈值: {product.lowStockThreshold})</CardDescription>
             </div>
             <div className="flex gap-2">
               {onArchiveProduct && !product.isArchived && (
@@ -101,15 +101,17 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                   <TableRow>
                     {isIngredient && <TableHead className="text-xs">生产日期</TableHead>}
                     {isIngredient && <TableHead className="text-xs">过期日期</TableHead>}
-                    {!isIngredient && <TableHead className="text-xs">入库日期</TableHead>}
+                    {!isIngredient && <TableHead className="text-xs">入库/生产日期</TableHead>}
                     <TableHead className="text-xs text-right">数量</TableHead>
                     <TableHead className="text-xs text-right">成本/单位</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : (a.createdAt && b.createdAt ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : 0 ))).map((batch) => {
+                  {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? new Date(a.productionDate).getTime() - new Date(b.productionDate).getTime() : (a.createdAt && b.createdAt ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : 0 )))).map((batch) => {
                     let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
                     let daysToExpiryText = "";
+                    const displayDate = !isIngredient ? batch.productionDate || batch.createdAt : batch.productionDate;
+
 
                     if (isIngredient && batch.expiryDate) {
                       const expiryDate = parseISO(batch.expiryDate);
@@ -144,7 +146,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                         )}
                          {!isIngredient && (
                           <TableCell className="py-1.5 text-xs">
-                            {batch.createdAt ? format(parseISO(batch.createdAt), "yyyy-MM-dd", { locale: zhCN }) : 'N/A'}
+                            {displayDate ? format(parseISO(displayDate), "yyyy-MM-dd", { locale: zhCN }) : 'N/A'}
                           </TableCell>
                          )}
                         <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
@@ -162,7 +164,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           )}
         </CardContent>
         <CardFooter className="pt-2">
-          {isLowStock && <Badge variant="destructive">低库存</Badge>}
+          {isLowStock && <Badge variant="destructive">低库存 (阈值: {product.lowStockThreshold})</Badge>}
           {isIngredient && batches.some(b => b.expiryDate && differenceInDays(parseISO(b.expiryDate), new Date()) <= appSettings.expiryWarningDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
             <Badge variant="outline" className="border-yellow-500 text-yellow-600">临近过期</Badge>
           )}

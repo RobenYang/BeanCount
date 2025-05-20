@@ -38,6 +38,10 @@ const productFormSchema = z.object({
   }),
   unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
   shelfLifeDays: z.coerce.number().int().optional(),
+  lowStockThreshold: z.coerce
+    .number({ invalid_type_error: "库存预警阈值必须是数字。" })
+    .int("库存预警阈值必须是整数。")
+    .min(0, "库存预警阈值不能为负。"),
   imageUrl: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
   if (data.category === "INGREDIENT") {
@@ -63,6 +67,7 @@ export function AddProductForm() {
       category: undefined,
       unit: "",
       shelfLifeDays: undefined,
+      lowStockThreshold: 5, // Default low stock threshold
       imageUrl: null,
     },
   });
@@ -168,6 +173,7 @@ export function AddProductForm() {
       category: data.category as ProductCategory,
       unit: data.unit,
       shelfLifeDays: data.category === "INGREDIENT" ? data.shelfLifeDays! : null,
+      lowStockThreshold: data.lowStockThreshold,
       imageUrl: imageDataUri,
     };
     addProduct(productDataToAdd);
@@ -176,6 +182,7 @@ export function AddProductForm() {
       category: undefined,
       unit: "",
       shelfLifeDays: undefined,
+      lowStockThreshold: 5, // Reset to default
       imageUrl: null,
     });
     setImageDataUri(null);
@@ -271,6 +278,34 @@ export function AddProductForm() {
                 )}
               />
             )}
+
+            <FormField
+              control={form.control}
+              name="lowStockThreshold"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>库存预警阈值</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="number" 
+                      placeholder="例如: 5"
+                      value={field.value === undefined ? '' : String(field.value)}
+                      onChange={(e) => {
+                          const val = e.target.value;
+                          field.onChange(val === '' ? undefined : parseInt(val, 10));
+                      }}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    当此产品库存数量低于或等于此值时，将标记为低库存。
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <FormField
               control={form.control}

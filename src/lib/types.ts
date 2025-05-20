@@ -7,6 +7,7 @@ export interface Product {
   category: ProductCategory;
   unit: string; // e.g., kg, liter, pcs
   shelfLifeDays: number | null; // Standard shelf life in days, null if not applicable
+  lowStockThreshold: number; // Product-specific low stock threshold
   imageUrl?: string; // Optional: Data URI for the product image
   createdAt: string; // ISO date string
   isArchived?: boolean; // For soft delete
@@ -82,6 +83,6 @@ export interface ChartDataPoint {
 }
 
 export interface AppSettings {
-  lowStockThreshold: number;
+  // lowStockThreshold: number; // Removed global threshold
   expiryWarningDays: number;
 }

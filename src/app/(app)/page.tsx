@@ -22,7 +22,7 @@ interface LowStockProductDetail {
   name: string;
   currentQuantity: number;
   unit: string;
-  threshold: number;
+  threshold: number; // Product-specific threshold
 }
 
 interface NearingExpiryProductDetail {
@@ -33,7 +33,7 @@ interface NearingExpiryProductDetail {
   expiryDate: string;
   daysLeft: number;
   currentQuantity: number;
-  warningDays: number;
+  warningDays: number; // Global expiry warning days from appSettings
 }
 
 
@@ -73,13 +73,13 @@ export default function DashboardPage() {
       const { totalQuantity } = getProductStockDetails(p.id);
       return { product: p, totalQuantity };
     })
-    .filter(({ totalQuantity }) => totalQuantity < appSettings.lowStockThreshold)
+    .filter(({ product, totalQuantity }) => totalQuantity < product.lowStockThreshold) // Use product.lowStockThreshold
     .map(({ product, totalQuantity }) => ({
       id: product.id,
       name: product.name,
       currentQuantity: totalQuantity,
       unit: product.unit,
-      threshold: appSettings.lowStockThreshold,
+      threshold: product.lowStockThreshold, // Use product.lowStockThreshold
     }));
 
   const nearingExpiryProductsDetails: NearingExpiryProductDetail[] = activeProducts.flatMap(p => {
@@ -89,7 +89,7 @@ export default function DashboardPage() {
       .filter(b => {
         if (!b.expiryDate) return false;
         const daysLeft = differenceInDays(parseISO(b.expiryDate), new Date());
-        return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays;
+        return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays; // appSettings for expiry warning
       })
       .map(b => ({
         productId: p.id,
@@ -333,5 +333,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-    
