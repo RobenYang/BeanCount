@@ -87,7 +87,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
               />
             </div>
             <div>
-              <p className="text-2xl font-bold">{totalQuantity} <span className="text-sm font-normal text-muted-foreground">{product.unit}(s)</span></p>
+              <p className="text-2xl font-bold">{totalQuantity} <span className="text-sm font-normal text-muted-foreground">{product.unit}</span></p>
               <p className="text-xs text-muted-foreground">总库存</p>
             </div>
           </div>
