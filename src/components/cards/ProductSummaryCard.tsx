@@ -8,12 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import NextImage from "next/image"; // Renamed to avoid conflict
+import NextImage from "next/image"; 
 import { Button } from "../ui/button";
-import { Archive, Edit, Package } from "lucide-react";
+import { Archive, Package } from "lucide-react"; // Removed Edit
 import Link from "next/link";
-import { useState } from "react"; // Added useState
-import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; // Added ImagePreviewModal
+import { useState } from "react"; 
+import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; 
+import { useInventory } from "@/contexts/InventoryContext"; // Added useInventory
 
 interface ProductSummaryCardProps {
   product: Product;
@@ -25,14 +26,14 @@ interface ProductSummaryCardProps {
 function formatProductCategoryForDisplay(category: Product['category']): string {
     if (category === 'INGREDIENT') return '食材';
     if (category === 'NON_INGREDIENT') return '非食材';
-    return category; // Fallback for any other unexpected values
+    return category; 
 }
 
 
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
-  const isLowStock = totalQuantity < 5;
-  const nearingExpiryThresholdDays = 7;
-
+  const { appSettings } = useInventory(); // Get appSettings from context
+  const isLowStock = totalQuantity < appSettings.lowStockThreshold;
+  
   const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
   const imageSrc = product.imageUrl || placeholderImage;
@@ -40,7 +41,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleImageClick = () => {
-    if (product.imageUrl) { // Only open if there's a real user-uploaded image
+    if (product.imageUrl) { 
       setIsModalOpen(true);
     }
   };
@@ -59,11 +60,6 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
               <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit}</CardDescription>
             </div>
             <div className="flex gap-2">
-              {/* <Button variant="ghost" size="icon" asChild>
-                <Link href={`/products/edit/${product.id}`} title="编辑产品">
-                  <Edit className="h-4 w-4" />
-                </Link>
-              </Button> */}
               {onArchiveProduct && !product.isArchived && (
                  <Button variant="ghost" size="icon" onClick={() => onArchiveProduct(product.id)} title="归档产品">
                    <Archive className="h-4 w-4" />
@@ -86,7 +82,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                 alt={product.name}
                 width={48}
                 height={48}
-                className="object-cover aspect-square" // Ensure aspect ratio for fixed size
+                className="object-cover aspect-square" 
                 data-ai-hint="product item"
               />
             </div>
@@ -123,7 +119,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                           daysToExpiryText = ` (已过期 ${Math.abs(daysToExpiry)}天)`;
                       } else {
                           daysToExpiryText = ` (剩 ${daysToExpiry}天)`;
-                          if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
+                          if (daysToExpiry <= appSettings.expiryWarningDays) expiryBadgeVariant = "outline";
                       }
                     }
 
@@ -167,7 +163,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
         </CardContent>
         <CardFooter className="pt-2">
           {isLowStock && <Badge variant="destructive">低库存</Badge>}
-          {isIngredient && batches.some(b => b.expiryDate && differenceInDays(parseISO(b.expiryDate), new Date()) <= nearingExpiryThresholdDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
+          {isIngredient && batches.some(b => b.expiryDate && differenceInDays(parseISO(b.expiryDate), new Date()) <= appSettings.expiryWarningDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
             <Badge variant="outline" className="border-yellow-500 text-yellow-600">临近过期</Badge>
           )}
         </CardFooter>

@@ -7,14 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Edit, Undo, PackageSearch, Package, ChevronDown, ChevronRight } from "lucide-react";
+import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings } from "lucide-react"; // Removed Edit
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
-import NextImage from "next/image"; // Renamed to avoid conflict with local Image component
+import NextImage from "next/image";
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; // Added ImagePreviewModal
+import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -27,12 +27,10 @@ function formatProductCategory(category: ProductCategory): string {
   }
 }
 
-function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batch[], unit: string, productCategory: ProductCategory }) {
+function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
   if (batches.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">该产品暂无活动批次信息。</p>;
   }
-
-  const nearingExpiryThresholdDays = 7;
 
   return (
     <div className="p-4 bg-muted/50 rounded-md">
@@ -42,7 +40,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
           <TableRow>
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">生产日期</TableHead>}
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">过期日期</TableHead>}
-            {!productCategory || productCategory === 'NON_INGREDIENT' && <TableHead className="text-xs">入库日期</TableHead>}
+            {productCategory === 'NON_INGREDIENT' && <TableHead className="text-xs">入库日期</TableHead>}
             <TableHead className="text-xs text-right">初始数量</TableHead>
             <TableHead className="text-xs text-right">当前数量</TableHead>
             <TableHead className="text-xs text-right">单位成本 (¥)</TableHead>
@@ -62,7 +60,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
                 daysToExpiryText = `已过期 ${Math.abs(daysToExpiry)}天`;
               } else {
                 daysToExpiryText = `剩 ${daysToExpiry}天`;
-                if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
+                if (daysToExpiry <= expiryWarningDays) expiryBadgeVariant = "outline";
               }
             }
 
@@ -103,7 +101,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
 }
 
 function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onArchive: (id: string) => void, onUnarchive: (id: string) => void }) {
-  const { getProductStockDetails } = useInventory();
+  const { getProductStockDetails, appSettings } = useInventory(); // Added appSettings
   const { totalQuantity, totalValue, batches } = getProductStockDetails(product.id);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -163,11 +161,6 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
           </Button>
         ) : (
           <>
-            {/* <Button variant="ghost" size="icon" asChild title="编辑产品">
-              <Link href={`/products/edit/${product.id}`}>
-                <Edit className="h-4 w-4" />
-              </Link>
-            </Button> */}
             <Button variant="ghost" size="icon" onClick={() => onArchive(product.id)} title="归档产品">
               <Archive className="h-4 w-4" />
             </Button>
@@ -180,7 +173,7 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
   const detailsRow = isExpanded ? (
     <TableRow key={`${product.id}-details`}>
       <TableCell colSpan={8}> 
-        <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} />
+        <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
       </TableCell>
     </TableRow>
   ) : null;

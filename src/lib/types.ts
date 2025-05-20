@@ -80,3 +80,8 @@ export interface ChartDataPoint {
   quantity: number;   // Stock quantity
   [key: string]: number | string; // Allows for dynamic data keys
 }
+
+export interface AppSettings {
+  lowStockThreshold: number;
+  expiryWarningDays: number;
+}

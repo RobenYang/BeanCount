@@ -1,16 +1,22 @@
 
 "use client";
 
-import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory } from '@/lib/types';
+import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory, AppSettings } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { toast } from "@/hooks/use-toast";
 import { addDays, formatISO, parseISO } from 'date-fns';
 
+const DEFAULT_APP_SETTINGS: AppSettings = {
+  lowStockThreshold: 5,
+  expiryWarningDays: 7,
+};
+
 interface InventoryContextType {
   products: Product[];
   batches: Batch[];
   transactions: Transaction[];
+  appSettings: AppSettings;
   addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => void;
   archiveProduct: (productId: string) => void;
   unarchiveProduct: (productId: string) => void;
@@ -19,6 +25,7 @@ interface InventoryContextType {
   recordOutflowFromSpecificBatch: (productId: string, batchId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
   getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: Batch[] };
+  updateAppSettings: (newSettings: Partial<AppSettings>) => void;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -51,6 +58,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [products, setProducts] = useLocalStorage<Product[]>('inventory_products_zh', []);
   const [batches, setBatches] = useLocalStorage<Batch[]>('inventory_batches_zh', []);
   const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions_zh', []);
+  const [appSettings, setAppSettings] = useLocalStorage<AppSettings>('inventory_app_settings_zh', DEFAULT_APP_SETTINGS);
+
+  const updateAppSettings = (newSettings: Partial<AppSettings>) => {
+    setAppSettings(prevSettings => ({ ...prevSettings, ...newSettings }));
+    toast({ title: "成功", description: "设置已保存。" });
+  };
 
   const addProduct = (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
     if (products.some(p => p.name.toLowerCase() === productData.name.toLowerCase())) {
@@ -62,7 +75,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       id: nanoid(),
       createdAt: formatISO(new Date()),
       isArchived: false,
-      imageUrl: productData.imageUrl || undefined, // Ensure imageUrl is handled
+      imageUrl: productData.imageUrl || undefined,
     };
     setProducts(prev => [...prev, newProduct]);
     toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
@@ -104,7 +117,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (product.shelfLifeDays && product.shelfLifeDays > 0) {
         expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
       }
-    } else { // NON_INGREDIENT
+    } else { 
       productionDateIso = null; 
       expiryDateIso = null; 
     }
@@ -219,7 +232,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         { productId: createdProducts[0].id, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 145 },
         { productId: createdProducts[1].id, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 12 },
         { productId: createdProducts[2].id, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 80 },
-        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, // Mark 杯 - Non-ingredient
+        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, 
       ];
 
       const createdBatches: Batch[] = [];
@@ -301,6 +314,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       products,
       batches,
       transactions,
+      appSettings,
       addProduct,
       archiveProduct,
       unarchiveProduct,
@@ -308,7 +322,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       addBatch,
       recordOutflowFromSpecificBatch,
       getBatchesByProductId,
-      getProductStockDetails
+      getProductStockDetails,
+      updateAppSettings,
     }}>
       {children}
     </InventoryContext.Provider>

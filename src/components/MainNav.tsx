@@ -10,7 +10,7 @@ import {
   Archive,
   PackageMinus,
   BarChart3,
-  // Settings,
+  Settings, // Added Settings icon
   // Users,
 } from "lucide-react"
 
@@ -31,6 +31,10 @@ const menuItems = [
   { href: "/stock/intake", label: "库存入库", icon: Archive },
   { href: "/stock/outflow", label: "库存出库", icon: PackageMinus },
   { href: "/stock/valuation", label: "库存统计", icon: BarChart3 },
+]
+
+const settingsMenuItems = [
+ { href: "/settings", label: "设置", icon: Settings },
 ]
 
 export function MainNav() {
@@ -64,6 +68,26 @@ export function MainNav() {
         ))}
       </SidebarGroup>
 
+      <SidebarGroup>
+        <SidebarGroupLabel>管理</SidebarGroupLabel>
+        {settingsMenuItems.map(({ href, label, icon: Icon }) => (
+          <SidebarMenuItem key={href}>
+            <Link href={href} passHref legacyBehavior>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname === href}
+                onClick={handleLinkClick}
+                tooltip={label}
+              >
+                <a>
+                  <Icon />
+                  <span>{label}</span>
+                </a>
+              </SidebarMenuButton>
+            </Link>
+          </SidebarMenuItem>
+        ))}
+      </SidebarGroup>
       {/*
       <SidebarGroup>
         <SidebarGroupLabel>设置</SidebarGroupLabel>
