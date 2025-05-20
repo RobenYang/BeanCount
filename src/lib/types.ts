@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -66,3 +67,18 @@ export const TIMESCALE_OPTIONS = [
   { value: 'LAST_YEAR', label: '过去一年' },
   { value: 'ALL_TIME', label: '全部时间' },
 ];
+
+// For Stock Valuation Chart View
+export const CHART_TIMESCALE_OPTIONS_TYPES = [
+  { value: 'LAST_7_DAYS_DAILY', label: '每日 (过去7天)' },
+  { value: 'LAST_30_DAYS_DAILY', label: '每日 (过去30天)' },
+  { value: 'LAST_3_MONTHS_WEEKLY', label: '每周 (过去3个月)' },
+  { value: 'LAST_12_MONTHS_MONTHLY', label: '每月 (过去12个月)' },
+] as const; // Use "as const" for stricter type checking on values
+
+export type ChartTimeScaleValue = typeof CHART_TIMESCALE_OPTIONS_TYPES[number]['value'];
+
+export interface ChartDataPoint {
+  date: string; // Formatted date string for X-axis
+  [key: string]: number | string; // Allows for dynamic data keys like 'productValue'
+}
