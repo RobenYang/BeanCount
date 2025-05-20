@@ -6,10 +6,11 @@ import type { Transaction } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { History, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import { History, ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react"; // Added Loader2
 import { format, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState, useEffect } from "react"; // Added useState, useEffect for hasMounted
 
 function formatTransactionType(type: Transaction['type'], isCorrectionIncrease?: boolean) {
   if (type === 'IN') {
@@ -33,11 +34,40 @@ function formatOutflowReason(reason?: Transaction['reason']) {
 }
 
 export default function TransactionsPage() {
-  const { transactions } = useInventory();
+  const { transactions, isLoadingTransactions } = useInventory();
+  const [hasMounted, setHasMounted] = useState(false);
 
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  // Sorting is done after fetching and when transactions array is populated
   const sortedTransactions = [...transactions].sort((a, b) =>
     parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()
   );
+
+  if (!hasMounted || isLoadingTransactions) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <History className="h-8 w-8" />
+            交易记录
+          </h1>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>所有交易明细</CardTitle>
+            <CardDescription>按时间从新到旧排序。包括所有产品的入库和出库记录。</CardDescription>
+          </CardHeader>
+          <CardContent className="flex items-center justify-center min-h-[200px]">
+            <Loader2 className="h-12 w-12 animate-spin text-primary" />
+            <p className="ml-4 text-muted-foreground">正在加载交易记录...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -79,14 +109,14 @@ export default function TransactionsPage() {
                         {transaction.isCorrectionIncrease ? `+${transaction.quantity}` : (transaction.type === 'IN' ? `+${transaction.quantity}` : `-${transaction.quantity}`)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {transaction.unitCostAtTransaction !== undefined ? `¥${transaction.unitCostAtTransaction.toFixed(2)}` : 'N/A'}
+                        {transaction.unitCostAtTransaction !== undefined && transaction.unitCostAtTransaction !== null ? `¥${transaction.unitCostAtTransaction.toFixed(2)}` : 'N/A'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {transaction.unitCostAtTransaction !== undefined ? `¥${(transaction.quantity * transaction.unitCostAtTransaction).toFixed(2)}` : 'N/A'}
+                        {transaction.unitCostAtTransaction !== undefined && transaction.unitCostAtTransaction !== null ? `¥${(transaction.quantity * transaction.unitCostAtTransaction).toFixed(2)}` : 'N/A'}
                       </TableCell>
                       <TableCell>{transaction.type === 'OUT' ? formatOutflowReason(transaction.reason) : 'N/A'}</TableCell>
-                      <TableCell className="max-w-[150px] truncate" title={transaction.notes}>{transaction.notes || 'N/A'}</TableCell>
-                      <TableCell className="text-xs truncate max-w-[100px]" title={transaction.batchId}>{transaction.batchId || 'N/A'}</TableCell>
+                      <TableCell className="max-w-[150px] truncate" title={transaction.notes || undefined}>{transaction.notes || 'N/A'}</TableCell>
+                      <TableCell className="text-xs truncate max-w-[100px]" title={transaction.batchId || undefined}>{transaction.batchId || 'N/A'}</TableCell>
                       <TableCell className="text-xs">{format(parseISO(transaction.timestamp), "yyyy-MM-dd HH:mm:ss", { locale: zhCN })}</TableCell>
                     </TableRow>
                   ))}
