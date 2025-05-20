@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,15 +17,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useInventory } from "@/contexts/InventoryContext";
-import { type OutflowReason, OUTFLOW_REASONS } from "@/lib/types";
+import { type OutflowReasonItem, OUTFLOW_REASONS_WITH_LABELS } from "@/lib/types";
 import { PackageMinus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const stockOutflowFormSchema = z.object({
-  productId: z.string().min(1, "Product selection is required."),
-  quantity: z.coerce.number().positive("Quantity must be a positive number."),
-  reason: z.enum(OUTFLOW_REASONS as [OutflowReason, ...OutflowReason[]], {
-    required_error: "Reason for outflow is required.",
+  productId: z.string().min(1, "必须选择产品。"),
+  quantity: z.coerce.number().positive("数量必须是正数。"),
+  reason: z.enum(OUTFLOW_REASONS_WITH_LABELS.map(r => r.value) as [string, ...string[]], {
+    required_error: "出库原因为必填项。",
   }),
   notes: z.string().optional(),
 });
@@ -45,7 +46,7 @@ export function StockOutflowForm() {
   });
 
   function onSubmit(data: StockOutflowFormValues) {
-    recordOutflow(data.productId, data.quantity, data.reason, data.notes);
+    recordOutflow(data.productId, data.quantity, data.reason as OutflowReasonItem['value'], data.notes);
     form.reset();
   }
 
@@ -57,7 +58,7 @@ export function StockOutflowForm() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <PackageMinus className="h-6 w-6" />
-          Record Stock Outflow/Consumption
+          记录出库/消耗
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -68,11 +69,11 @@ export function StockOutflowForm() {
               name="productId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product</FormLabel>
+                  <FormLabel>产品</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a product" />
+                        <SelectValue placeholder="选择一个产品" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -85,7 +86,7 @@ export function StockOutflowForm() {
                   </Select>
                   {stockDetails && (
                     <p className="text-sm text-muted-foreground mt-1">
-                      Available: {stockDetails.totalQuantity} {products.find(p=>p.id === selectedProductId)?.unit}
+                      可用库存: {stockDetails.totalQuantity} {products.find(p=>p.id === selectedProductId)?.unit}
                     </p>
                   )}
                   <FormMessage />
@@ -98,9 +99,9 @@ export function StockOutflowForm() {
               name="quantity"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Quantity to Outflow</FormLabel>
+                  <FormLabel>出库数量</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="e.g., 2" {...field} />
+                    <Input type="number" placeholder="例如: 2" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -112,17 +113,17 @@ export function StockOutflowForm() {
               name="reason"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Reason for Outflow</FormLabel>
+                  <FormLabel>出库原因</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a reason" />
+                        <SelectValue placeholder="选择一个原因" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {OUTFLOW_REASONS.map((reason) => (
-                        <SelectItem key={reason} value={reason}>
-                          {reason.replace(/_/g, ' ')}
+                      {OUTFLOW_REASONS_WITH_LABELS.map((reasonItem) => (
+                        <SelectItem key={reasonItem.value} value={reasonItem.value}>
+                          {reasonItem.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -137,9 +138,9 @@ export function StockOutflowForm() {
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes (Optional)</FormLabel>
+                  <FormLabel>备注 (可选)</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="e.g., For event catering, item damaged" {...field} />
+                    <Textarea placeholder="例如: 用于活动餐饮, 物品损坏" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -147,7 +148,7 @@ export function StockOutflowForm() {
             />
 
             <Button type="submit" className="w-full">
-              <PackageMinus className="mr-2 h-4 w-4" /> Record Outflow
+              <PackageMinus className="mr-2 h-4 w-4" /> 记录出库
             </Button>
           </form>
         </Form>

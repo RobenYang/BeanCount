@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,14 +20,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useInventory } from "@/contexts/InventoryContext";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
+import { zhCN } from 'date-fns/locale';
 import { CalendarIcon, Archive } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const stockIntakeFormSchema = z.object({
-  productId: z.string().min(1, "Product selection is required."),
-  productionDate: z.date({ required_error: "Production date is required." }),
-  initialQuantity: z.coerce.number().positive("Quantity must be a positive number."),
-  unitCost: z.coerce.number().min(0, "Unit cost cannot be negative."),
+  productId: z.string().min(1, "必须选择产品。"),
+  productionDate: z.date({ required_error: "生产日期为必填项。" }),
+  initialQuantity: z.coerce.number().positive("数量必须是正数。"),
+  unitCost: z.coerce.number().min(0, "单位成本不能为负。"),
 });
 
 type StockIntakeFormValues = z.infer<typeof stockIntakeFormSchema>;
@@ -48,12 +50,11 @@ export function StockIntakeForm() {
     const { productId, productionDate, initialQuantity, unitCost } = data;
     addBatch({ 
       productId, 
-      productionDate: productionDate.toISOString(), // Convert to ISO string
+      productionDate: productionDate.toISOString(), 
       initialQuantity, 
       unitCost 
     });
     form.reset();
-    // Reset date field specifically if needed, or set a default like new Date()
     form.setValue("productionDate", undefined as any); 
   }
 
@@ -62,7 +63,7 @@ export function StockIntakeForm() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Archive className="h-6 w-6" />
-          Record Stock Intake
+          记录入库
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -73,11 +74,11 @@ export function StockIntakeForm() {
               name="productId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product</FormLabel>
+                  <FormLabel>产品</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a product" />
+                        <SelectValue placeholder="选择一个产品" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -98,7 +99,7 @@ export function StockIntakeForm() {
               name="productionDate"
               render={({ field }) => (
                 <FormItem className="flex flex-col">
-                  <FormLabel>Production Date</FormLabel>
+                  <FormLabel>生产日期</FormLabel>
                   <Popover>
                     <PopoverTrigger asChild>
                       <FormControl>
@@ -110,9 +111,9 @@ export function StockIntakeForm() {
                           )}
                         >
                           {field.value && isValid(new Date(field.value)) ? (
-                            format(new Date(field.value), "PPP")
+                            format(new Date(field.value), "PPP", { locale: zhCN })
                           ) : (
-                            <span>Pick a date</span>
+                            <span>选择一个日期</span>
                           )}
                           <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                         </Button>
@@ -120,6 +121,7 @@ export function StockIntakeForm() {
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
                       <Calendar
+                        locale={zhCN}
                         mode="single"
                         selected={field.value}
                         onSelect={field.onChange}
@@ -140,9 +142,9 @@ export function StockIntakeForm() {
               name="initialQuantity"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Quantity Received</FormLabel>
+                  <FormLabel>接收数量</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="e.g., 10" {...field} />
+                    <Input type="number" placeholder="例如: 10" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -154,16 +156,16 @@ export function StockIntakeForm() {
               name="unitCost"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Unit Cost</FormLabel>
+                  <FormLabel>单位成本</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" placeholder="e.g., 15.50" {...field} />
+                    <Input type="number" step="0.01" placeholder="例如: 15.50" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <Button type="submit" className="w-full">
-              <Archive className="mr-2 h-4 w-4" /> Add Stock Batch
+              <Archive className="mr-2 h-4 w-4" />添加入库批次
             </Button>
           </form>
         </Form>

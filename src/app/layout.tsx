@@ -8,8 +8,8 @@ const geistSans = GeistSans;
 // Removed geistMono constant
 
 export const metadata: Metadata = {
-  title: 'Bean Counter - Coffee Shop Inventory',
-  description: 'Manage your coffee shop inventory with ease.',
+  title: '豆豆账本 - 咖啡店库存管理',
+  description: '轻松管理您的咖啡店库存。',
 };
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${geistSans.variable} font-sans antialiased`}>
         {children}
         <Toaster />

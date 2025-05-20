@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,10 +19,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlusCircle } from "lucide-react";
 
 const productFormSchema = z.object({
-  name: z.string().min(2, "Product name must be at least 2 characters."),
-  category: z.string().min(1, "Category is required."),
-  unit: z.string().min(1, "Unit is required (e.g., kg, liter, pcs)."),
-  shelfLifeDays: z.coerce.number().int().positive("Shelf life must be a positive number of days."),
+  name: z.string().min(2, "产品名称至少需要2个字符。"),
+  category: z.string().min(1, "类别为必填项。"),
+  unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
+  shelfLifeDays: z.coerce.number().int().positive("保质期必须是正整数天数。"),
 });
 
 type ProductFormValues = z.infer<typeof productFormSchema>;
@@ -48,7 +49,7 @@ export function AddProductForm() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <PlusCircle className="h-6 w-6" />
-          Add New Product
+          添加新产品
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -59,9 +60,9 @@ export function AddProductForm() {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Product Name</FormLabel>
+                  <FormLabel>产品名称</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Arabica Coffee Beans" {...field} />
+                    <Input placeholder="例如: 阿拉比卡咖啡豆" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -72,9 +73,9 @@ export function AddProductForm() {
               name="category"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Category</FormLabel>
+                  <FormLabel>类别</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Coffee, Dairy, Syrup" {...field} />
+                    <Input placeholder="例如: 咖啡, 乳制品, 糖浆" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -85,9 +86,9 @@ export function AddProductForm() {
               name="unit"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Unit of Measurement</FormLabel>
+                  <FormLabel>计量单位</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., kg, liter, pcs, bottle" {...field} />
+                    <Input placeholder="例如: kg, 升, 个, 瓶" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -98,16 +99,16 @@ export function AddProductForm() {
               name="shelfLifeDays"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Standard Shelf Life (days)</FormLabel>
+                  <FormLabel>标准保质期 (天)</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="e.g., 365 for 1 year" {...field} />
+                    <Input type="number" placeholder="例如: 365 代表 1 年" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
             <Button type="submit" className="w-full">
-              <PlusCircle className="mr-2 h-4 w-4" /> Add Product
+              <PlusCircle className="mr-2 h-4 w-4" /> 添加产品
             </Button>
           </form>
         </Form>

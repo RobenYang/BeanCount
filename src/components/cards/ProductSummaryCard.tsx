@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Product, Batch } from "@/lib/types";
@@ -5,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays, parseISO } from "date-fns";
+import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Image from "next/image";
 import { Button } from "../ui/button";
@@ -19,7 +21,7 @@ interface ProductSummaryCardProps {
 }
 
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
-  const isLowStock = totalQuantity < 5; // Example low stock threshold
+  const isLowStock = totalQuantity < 5; 
   const nearingExpiryThresholdDays = 7;
 
   return (
@@ -31,16 +33,16 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
               <Package className="h-5 w-5 text-primary" /> 
               {product.name}
             </CardTitle>
-            <CardDescription>{product.category} - Unit: {product.unit}</CardDescription>
+            <CardDescription>{product.category} - 单位: {product.unit}</CardDescription>
           </div>
           <div className="flex gap-2">
             {/* <Button variant="ghost" size="icon" asChild>
-              <Link href={`/products/edit/${product.id}`} title="Edit Product">
+              <Link href={`/products/edit/${product.id}`} title="编辑产品">
                 <Edit className="h-4 w-4" />
               </Link>
             </Button> */}
             {onArchiveProduct && !product.isArchived && (
-               <Button variant="ghost" size="icon" onClick={() => onArchiveProduct(product.id)} title="Archive Product">
+               <Button variant="ghost" size="icon" onClick={() => onArchiveProduct(product.id)} title="归档产品">
                  <Archive className="h-4 w-4" />
                </Button>
             )}
@@ -58,7 +60,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           />
           <div>
             <p className="text-2xl font-bold">{totalQuantity} <span className="text-sm font-normal text-muted-foreground">{product.unit}(s)</span></p>
-            <p className="text-xs text-muted-foreground">Total In Stock</p>
+            <p className="text-xs text-muted-foreground">总库存</p>
           </div>
         </div>
        
@@ -69,9 +71,9 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">Expiry</TableHead>
-                  <TableHead className="text-xs text-right">Qty</TableHead>
-                  <TableHead className="text-xs text-right">Cost/Unit</TableHead>
+                  <TableHead className="text-xs">过期日期</TableHead>
+                  <TableHead className="text-xs text-right">数量</TableHead>
+                  <TableHead className="text-xs text-right">成本/单位</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -86,8 +88,8 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                     <TableRow key={batch.id}>
                       <TableCell className="py-1.5">
                         <Badge variant={expiryBadgeVariant} className="text-xs">
-                          {format(expiryDate, "dd MMM yyyy")}
-                          {daysToExpiry < 0 ? ` (Expired ${Math.abs(daysToExpiry)}d ago)` : ` (${daysToExpiry}d left)`}
+                          {format(expiryDate, "yyyy年MM月dd日", { locale: zhCN })}
+                          {daysToExpiry < 0 ? ` (已过期 ${Math.abs(daysToExpiry)}天)` : ` (剩 ${daysToExpiry}天)`}
                         </Badge>
                       </TableCell>
                       <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
@@ -100,14 +102,14 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           </ScrollArea>
         ) : (
           <div className="flex items-center justify-center h-48 text-muted-foreground">
-            <p>No batches in stock.</p>
+            <p>暂无批次库存。</p>
           </div>
         )}
       </CardContent>
       <CardFooter className="pt-2">
-        {isLowStock && <Badge variant="destructive">Low Stock</Badge>}
+        {isLowStock && <Badge variant="destructive">低库存</Badge>}
         {batches.some(b => differenceInDays(parseISO(b.expiryDate), new Date()) <= nearingExpiryThresholdDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
-          <Badge variant="outline" className="border-yellow-500 text-yellow-600">Nearing Expiry</Badge>
+          <Badge variant="outline" className="border-yellow-500 text-yellow-600">临近过期</Badge>
         )}
       </CardFooter>
     </Card>

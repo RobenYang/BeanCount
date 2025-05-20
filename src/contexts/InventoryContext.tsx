@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Product, Batch, Transaction, OutflowReason, TransactionType } from '@/lib/types';
+import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { toast } from "@/hooks/use-toast";
@@ -16,7 +16,7 @@ interface InventoryContextType {
   unarchiveProduct: (productId: string) => void;
   getProductById: (id: string) => Product | undefined;
   addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => void;
-  recordOutflow: (productId: string, quantity: number, reason: OutflowReason, notes?: string) => void;
+  recordOutflow: (productId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
   getProductStockDetails: (productId: string) => { totalQuantity: number; batches: Batch[] };
 }
@@ -48,13 +48,13 @@ const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<R
 
 
 export const InventoryProvider = ({ children }: { children: ReactNode }) => {
-  const [products, setProducts] = useLocalStorage<Product[]>('inventory_products', []);
-  const [batches, setBatches] = useLocalStorage<Batch[]>('inventory_batches', []);
-  const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions', []);
+  const [products, setProducts] = useLocalStorage<Product[]>('inventory_products_zh', []);
+  const [batches, setBatches] = useLocalStorage<Batch[]>('inventory_batches_zh', []);
+  const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions_zh', []);
 
   const addProduct = (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
     if (products.some(p => p.name.toLowerCase() === productData.name.toLowerCase())) {
-      toast({ title: "Error", description: `Product with name "${productData.name}" already exists.`, variant: "destructive" });
+      toast({ title: "错误", description: `名为 "${productData.name}" 的产品已存在。`, variant: "destructive" });
       return;
     }
     const newProduct: Product = {
@@ -64,17 +64,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       isArchived: false,
     };
     setProducts(prev => [...prev, newProduct]);
-    toast({ title: "Success", description: `Product "${newProduct.name}" added.` });
+    toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
   };
 
   const archiveProduct = (productId: string) => {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: true } : p));
-    toast({ title: "Success", description: "Product archived." });
+    toast({ title: "成功", description: "产品已归档。" });
   };
 
   const unarchiveProduct = (productId: string) => {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: false } : p));
-    toast({ title: "Success", description: "Product unarchived." });
+    toast({ title: "成功", description: "产品已取消归档。" });
   }
 
   const getProductById = (id: string) => products.find(p => p.id === id);
@@ -82,7 +82,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const addBatch = (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => {
     const product = getProductById(batchData.productId);
     if (!product) {
-      toast({ title: "Error", description: "Product not found for this batch.", variant: "destructive" });
+      toast({ title: "错误", description: "未找到此批次的产品。", variant: "destructive" });
       return;
     }
 
@@ -94,7 +94,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       id: nanoid(),
       productName: product.name,
       expiryDate: formatISO(expiryDate),
-      productionDate: formatISO(productionDate), // ensure it's ISO string
+      productionDate: formatISO(productionDate), 
       currentQuantity: batchData.initialQuantity,
       createdAt: formatISO(new Date()),
     };
@@ -109,26 +109,26 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       quantity: newBatch.initialQuantity,
       timestamp: formatISO(new Date()),
       unitCostAtTransaction: newBatch.unitCost,
-      notes: `Initial stock intake for batch ${newBatch.id}`,
+      notes: `批次 ${newBatch.id} 的初始入库`,
     };
     setTransactions(prev => [...prev, newTransaction]);
-    toast({ title: "Success", description: `Batch for "${product.name}" added. Quantity: ${newBatch.initialQuantity}` });
+    toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}` });
   };
 
-  const recordOutflow = (productId: string, quantityToOutflow: number, reason: OutflowReason, notes?: string) => {
+  const recordOutflow = (productId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
     const product = getProductById(productId);
     if (!product) {
-      toast({ title: "Error", description: "Product not found.", variant: "destructive" });
+      toast({ title: "错误", description: "未找到产品。", variant: "destructive" });
       return;
     }
 
     let remainingQuantityToOutflow = quantityToOutflow;
     const productBatches = batches
       .filter(b => b.productId === productId && b.currentQuantity > 0)
-      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()); // FEFO
+      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()); 
 
     if (productBatches.reduce((sum, b) => sum + b.currentQuantity, 0) < quantityToOutflow) {
-      toast({ title: "Error", description: `Insufficient stock for "${product.name}". Available: ${productBatches.reduce((sum, b) => sum + b.currentQuantity, 0)}`, variant: "destructive" });
+      toast({ title: "错误", description: `"${product.name}" 库存不足。可用: ${productBatches.reduce((sum, b) => sum + b.currentQuantity, 0)}`, variant: "destructive" });
       return;
     }
 
@@ -150,7 +150,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         productName: product.name,
         batchId: batch.id,
         type: 'OUT',
-        quantity: outflowFromThisBatch, // Store as positive, interpret as outflow by type
+        quantity: outflowFromThisBatch,
         timestamp: formatISO(new Date()),
         reason,
         notes,
@@ -161,7 +161,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     setBatches(updatedBatches);
     setTransactions(prev => [...prev, ...newTransactions]);
-    toast({ title: "Success", description: `Stock outflow of ${quantityToOutflow} for "${product.name}" recorded.` });
+    toast({ title: "成功", description: `"${product.name}" 的 ${quantityToOutflow} 件库存出库已记录。` });
   };
 
   const getBatchesByProductId = (productId: string) => {
@@ -174,20 +174,19 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     return { totalQuantity, batches: productBatches };
   };
   
-  // Effect to add some initial data if storage is empty for easier testing
   useEffect(() => {
     if (products.length === 0 && batches.length === 0) {
       const sampleProducts = [
-        { id: 'coffee-beans-arabica', name: 'Arabica Coffee Beans', category: 'Coffee', unit: 'kg', shelfLifeDays: 365, createdAt: formatISO(new Date()), isArchived: false },
-        { id: 'milk-full-cream', name: 'Full Cream Milk', category: 'Dairy', unit: 'liter', shelfLifeDays: 7, createdAt: formatISO(new Date()), isArchived: false },
-        { id: 'syrup-vanilla', name: 'Vanilla Syrup', category: 'Syrups', unit: 'bottle', shelfLifeDays: 730, createdAt: formatISO(new Date()), isArchived: false },
+        { id: 'coffee-beans-arabica', name: '阿拉比卡咖啡豆', category: '咖啡', unit: 'kg', shelfLifeDays: 365, createdAt: formatISO(new Date()), isArchived: false },
+        { id: 'milk-full-cream', name: '全脂牛奶', category: '乳制品', unit: '升', shelfLifeDays: 7, createdAt: formatISO(new Date()), isArchived: false },
+        { id: 'syrup-vanilla', name: '香草糖浆', category: '糖浆', unit: '瓶', shelfLifeDays: 730, createdAt: formatISO(new Date()), isArchived: false },
       ];
       setProducts(sampleProducts);
 
       const sampleBatches = [
-        { id: nanoid(), productId: 'coffee-beans-arabica', productName: 'Arabica Coffee Beans', productionDate: formatISO(addDays(new Date(), -30)), expiryDate: formatISO(addDays(new Date(), 335)), initialQuantity: 10, currentQuantity: 8, unitCost: 15, createdAt: formatISO(new Date()) },
-        { id: nanoid(), productId: 'coffee-beans-arabica', productName: 'Arabica Coffee Beans', productionDate: formatISO(addDays(new Date(), -60)), expiryDate: formatISO(addDays(new Date(), 305)), initialQuantity: 5, currentQuantity: 5, unitCost: 14.5, createdAt: formatISO(new Date()) },
-        { id: nanoid(), productId: 'milk-full-cream', productName: 'Full Cream Milk', productionDate: formatISO(addDays(new Date(), -2)), expiryDate: formatISO(addDays(new Date(), 5)), initialQuantity: 20, currentQuantity: 15, unitCost: 1.2, createdAt: formatISO(new Date()) },
+        { id: nanoid(), productId: 'coffee-beans-arabica', productName: '阿拉比卡咖啡豆', productionDate: formatISO(addDays(new Date(), -30)), expiryDate: formatISO(addDays(new Date(), 335)), initialQuantity: 10, currentQuantity: 8, unitCost: 15, createdAt: formatISO(new Date()) },
+        { id: nanoid(), productId: 'coffee-beans-arabica', productName: '阿拉比卡咖啡豆', productionDate: formatISO(addDays(new Date(), -60)), expiryDate: formatISO(addDays(new Date(), 305)), initialQuantity: 5, currentQuantity: 5, unitCost: 14.5, createdAt: formatISO(new Date()) },
+        { id: nanoid(), productId: 'milk-full-cream', productName: '全脂牛奶', productionDate: formatISO(addDays(new Date(), -2)), expiryDate: formatISO(addDays(new Date(), 5)), initialQuantity: 20, currentQuantity: 15, unitCost: 1.2, createdAt: formatISO(new Date()) },
       ];
       setBatches(sampleBatches);
       
@@ -196,30 +195,30 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         productId: b.productId,
         productName: b.productName,
         batchId: b.id,
-        type: 'IN',
+        type: 'IN' as TransactionType,
         quantity: b.initialQuantity,
         timestamp: b.createdAt,
         unitCostAtTransaction: b.unitCost,
-        notes: 'Initial sample data'
+        notes: '初始样本数据'
       }));
-      // Add a sample outflow transaction
       if (sampleBatches[0]) {
         sampleTransactions.push({
           id: nanoid(),
           productId: sampleBatches[0].productId,
           productName: sampleBatches[0].productName,
           batchId: sampleBatches[0].id,
-          type: 'OUT',
-          quantity: 2, // 10 initial - 2 outflow = 8 current
+          type: 'OUT' as TransactionType,
+          quantity: 2, 
           timestamp: formatISO(addDays(new Date(), -1)),
-          reason: 'SALE',
-          unitCostAtTransaction: sampleBatches[0].unitCost
+          reason: 'SALE' as OutflowReasonValue,
+          unitCostAtTransaction: sampleBatches[0].unitCost,
+          notes: '示例销售'
         });
       }
       setTransactions(sampleTransactions);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run only once on mount if empty
+  }, []);
 
 
   return (
@@ -244,7 +243,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 export const useInventory = () => {
   const context = useContext(InventoryContext);
   if (context === undefined) {
-    throw new Error('useInventory must be used within an InventoryProvider');
+    throw new Error('useInventory 必须在 InventoryProvider 中使用');
   }
   return context;
 };

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,12 +18,12 @@ import { stockValuationSummary, type StockValuationSummaryInput, type StockValua
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Loader2 } from "lucide-react";
-import { OUTFLOW_REASONS, TIMESCALE_OPTIONS, type OutflowReason } from "@/lib/types";
+import { OUTFLOW_REASONS_WITH_LABELS, TIMESCALE_OPTIONS, type OutflowReasonItem } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const stockValuationFormSchema = z.object({
-  timeScale: z.string().min(1, "Time scale selection is required."),
-  outflowReason: z.string().min(1, "Outflow reason selection is required."),
+  timeScale: z.string().min(1, "必须选择时间范围。"),
+  outflowReason: z.string().min(1, "必须选择出库原因。"),
 });
 
 type StockValuationFormValues = z.infer<typeof stockValuationFormSchema>;
@@ -36,7 +37,7 @@ export function StockValuationForm() {
     resolver: zodResolver(stockValuationFormSchema),
     defaultValues: {
       timeScale: TIMESCALE_OPTIONS[0].value,
-      outflowReason: OUTFLOW_REASONS[0],
+      outflowReason: "ALL", // Default to "All Reasons"
     },
   });
 
@@ -45,11 +46,16 @@ export function StockValuationForm() {
     setError(null);
     setSummary(null);
     try {
-      const result = await stockValuationSummary(data as StockValuationSummaryInput);
+      // The AI flow expects English enum-like values for outflowReason
+      const inputForAI: StockValuationSummaryInput = {
+        timeScale: data.timeScale,
+        outflowReason: data.outflowReason, // This is already the 'value' field like 'SALE' or 'ALL'
+      };
+      const result = await stockValuationSummary(inputForAI);
       setSummary(result);
     } catch (e) {
-      console.error("Error generating stock valuation summary:", e);
-      setError("Failed to generate summary. Please try again.");
+      console.error("生成库存估值摘要时出错:", e);
+      setError("生成摘要失败。请重试。");
     } finally {
       setIsLoading(false);
     }
@@ -61,10 +67,10 @@ export function StockValuationForm() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-6 w-6" />
-            Stock Valuation Summary
+            库存估值摘要
           </CardTitle>
           <CardDescription>
-            Generate an AI-powered summary of stock valuation based on selected filters.
+            根据所选筛选条件生成AI驱动的库存估值摘要。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -75,11 +81,11 @@ export function StockValuationForm() {
                 name="timeScale"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Time Scale</FormLabel>
+                    <FormLabel>时间范围</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a time scale" />
+                          <SelectValue placeholder="选择一个时间范围" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -100,20 +106,20 @@ export function StockValuationForm() {
                 name="outflowReason"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Outflow Reason</FormLabel>
+                    <FormLabel>出库原因</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select an outflow reason" />
+                          <SelectValue placeholder="选择一个出库原因" />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {OUTFLOW_REASONS.map((reason) => (
-                          <SelectItem key={reason} value={reason}>
-                            {reason.replace(/_/g, ' ')}
+                        <SelectItem value="ALL">所有原因</SelectItem>
+                        {OUTFLOW_REASONS_WITH_LABELS.map((reason) => (
+                          <SelectItem key={reason.value} value={reason.value}>
+                            {reason.label}
                           </SelectItem>
                         ))}
-                        <SelectItem value="ALL">All Reasons</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -126,7 +132,7 @@ export function StockValuationForm() {
                 ) : (
                   <BarChart3 className="mr-2 h-4 w-4" />
                 )}
-                Generate Summary
+                生成摘要
               </Button>
             </form>
           </Form>
@@ -137,7 +143,7 @@ export function StockValuationForm() {
         <Card className="max-w-2xl mx-auto mt-6">
           <CardContent className="pt-6 flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="ml-2">Generating summary...</p>
+            <p className="ml-2">正在生成摘要...</p>
           </CardContent>
         </Card>
       )}
@@ -145,7 +151,7 @@ export function StockValuationForm() {
       {error && (
         <Card className="max-w-2xl mx-auto mt-6" variant="destructive">
           <CardHeader>
-            <CardTitle>Error</CardTitle>
+            <CardTitle>错误</CardTitle>
           </CardHeader>
           <CardContent>
             <p>{error}</p>
@@ -156,7 +162,7 @@ export function StockValuationForm() {
       {summary && (
         <Card className="max-w-2xl mx-auto mt-6">
           <CardHeader>
-            <CardTitle>Valuation Summary Result</CardTitle>
+            <CardTitle>估值摘要结果</CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-48">

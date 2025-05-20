@@ -20,8 +20,25 @@ export interface Batch {
   createdAt: string; // ISO date string
 }
 
-export type TransactionType = 'IN' | 'OUT'; // Simplified for now
-export type OutflowReason = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE' | 'ADJUSTMENT_INCREASE';
+export type TransactionType = 'IN' | 'OUT';
+
+export type OutflowReasonValue = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE' | 'ADJUSTMENT_INCREASE';
+
+export interface OutflowReasonItem {
+  value: OutflowReasonValue;
+  label: string;
+}
+
+export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
+  { value: 'SALE', label: '销售' },
+  { value: 'SPOILAGE', label: '损耗' },
+  { value: 'INTERNAL_USE', label: '内部使用' },
+  { value: 'ADJUSTMENT_DECREASE', label: '库存调整 (减少)' },
+  // Note: ADJUSTMENT_INCREASE is not typically an "outflow" reason,
+  // but kept for structural consistency if needed elsewhere.
+  // For outflow forms, typically only decrease reasons are shown.
+];
+
 
 export interface Transaction {
   id: string;
@@ -29,24 +46,23 @@ export interface Transaction {
   productName?: string; // Denormalized
   batchId?: string;
   type: TransactionType;
-  quantity: number; // Positive for IN, negative for OUT
+  quantity: number; // Positive for IN, positive for OUT (type determines direction)
   timestamp: string; // ISO date string
-  reason?: OutflowReason;
+  reason?: OutflowReasonValue;
   notes?: string;
   unitCostAtTransaction?: number; // To record cost at time of transaction
 }
 
 // For Stock Valuation Summary AI
 export interface StockValuationSummaryParams {
-  timeScale: string;
-  outflowReason: string;
+  timeScale: string; // e.g., 'LAST_7_DAYS'
+  outflowReason: string; // e.g., 'SALE', 'ALL'
 }
 
-export const OUTFLOW_REASONS: OutflowReason[] = ['SALE', 'SPOILAGE', 'INTERNAL_USE', 'ADJUSTMENT_DECREASE'];
 export const TIMESCALE_OPTIONS = [
-  { value: 'LAST_7_DAYS', label: 'Last 7 Days' },
-  { value: 'LAST_30_DAYS', label: 'Last 30 Days' },
-  { value: 'LAST_90_DAYS', label: 'Last 90 Days' },
-  { value: 'LAST_YEAR', label: 'Last Year' },
-  { value: 'ALL_TIME', label: 'All Time' },
+  { value: 'LAST_7_DAYS', label: '过去7天' },
+  { value: 'LAST_30_DAYS', label: '过去30天' },
+  { value: 'LAST_90_DAYS', label: '过去90天' },
+  { value: 'LAST_YEAR', label: '过去一年' },
+  { value: 'ALL_TIME', label: '全部时间' },
 ];

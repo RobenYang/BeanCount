@@ -1,3 +1,4 @@
+
 "use client"
 
 import Link from "next/link"
@@ -9,8 +10,8 @@ import {
   Archive,
   PackageMinus,
   BarChart3,
-  Settings, // Example for future use
-  Users, // Example for future use
+  Settings, 
+  Users, 
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -24,12 +25,12 @@ import {
 } from "@/components/ui/sidebar"
 
 const menuItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/products", label: "Products", icon: Package },
-  { href: "/products/add", label: "Add Product", icon: PlusCircle },
-  { href: "/stock/intake", label: "Stock Intake", icon: Archive },
-  { href: "/stock/outflow", label: "Stock Outflow", icon: PackageMinus },
-  { href: "/stock/valuation", label: "Valuation", icon: BarChart3 },
+  { href: "/", label: "仪表盘", icon: LayoutDashboard },
+  { href: "/products", label: "产品管理", icon: Package },
+  { href: "/products/add", label: "添加产品", icon: PlusCircle },
+  { href: "/stock/intake", label: "库存入库", icon: Archive },
+  { href: "/stock/outflow", label: "库存出库", icon: PackageMinus },
+  { href: "/stock/valuation", label: "库存估值", icon: BarChart3 },
 ]
 
 export function MainNav() {
@@ -37,13 +38,13 @@ export function MainNav() {
   const { setOpenMobile } = useSidebar();
 
   const handleLinkClick = () => {
-    setOpenMobile(false); // Close mobile sidebar on link click
+    setOpenMobile(false); 
   };
 
   return (
     <SidebarMenu>
       <SidebarGroup>
-        <SidebarGroupLabel>Menu</SidebarGroupLabel>
+        <SidebarGroupLabel>菜单</SidebarGroupLabel>
         {menuItems.map(({ href, label, icon: Icon }) => (
           <SidebarMenuItem key={href}>
             <Link href={href} passHref legacyBehavior>
@@ -63,24 +64,25 @@ export function MainNav() {
         ))}
       </SidebarGroup>
 
-      {/* Example of another group for future expansion */}
-      {/* <SidebarGroup>
-        <SidebarGroupLabel>Settings</SidebarGroupLabel>
+      {/* 
+      <SidebarGroup>
+        <SidebarGroupLabel>设置</SidebarGroupLabel>
         <SidebarMenuItem>
           <Link href="/settings" passHref legacyBehavior>
-            <SidebarMenuButton asChild isActive={pathname === "/settings"} onClick={handleLinkClick} tooltip="General Settings">
-              <a><Settings /><span>Settings</span></a>
+            <SidebarMenuButton asChild isActive={pathname === "/settings"} onClick={handleLinkClick} tooltip="常规设置">
+              <a><Settings /><span>设置</span></a>
             </SidebarMenuButton>
           </Link>
         </SidebarMenuItem>
         <SidebarMenuItem>
           <Link href="/users" passHref legacyBehavior>
-            <SidebarMenuButton asChild isActive={pathname === "/users"} onClick={handleLinkClick} tooltip="Manage Users">
-              <a><Users /><span>Users</span></a>
+            <SidebarMenuButton asChild isActive={pathname === "/users"} onClick={handleLinkClick} tooltip="管理用户">
+              <a><Users /><span>用户</span></a>
             </SidebarMenuButton>
           </Link>
         </SidebarMenuItem>
-      </SidebarGroup> */}
+      </SidebarGroup> 
+      */}
     </SidebarMenu>
   )
 }
