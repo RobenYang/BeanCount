@@ -18,10 +18,14 @@ import { Input } from "@/components/ui/input";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { AppSettings } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Save, Palette, Loader2 } from "lucide-react";
+import { Save, Palette, Loader2, AlertTriangle, Download, Trash2, BookText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { useErrorLogger } from "@/contexts/ErrorContext"; // Import useErrorLogger
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/contexts/AuthContext";
+
 
 const settingsFormSchema = z.object({
   expiryWarningDays: z.coerce
@@ -32,20 +36,24 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
+// Removed DEFAULT_APP_SETTINGS as it's now handled by InventoryContext's initial state or API fetch
+// const DEFAULT_APP_SETTINGS: AppSettings = { expiryWarningDays: 7 };
+
 export function SettingsForm() {
   const { appSettings, updateAppSettings, isLoadingSettings } = useInventory();
+  const { errorLogs, exportErrorLogs, clearErrorLogs } = useErrorLogger(); // Get error log functions
+  const { currentUser } = useAuth();
   const [selectedTheme, setSelectedTheme] = useState<string>('light');
 
   const settingsHookForm = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
-    defaultValues: { // Default values will be updated by useEffect
-      expiryWarningDays: DEFAULT_APP_SETTINGS.expiryWarningDays,
+    defaultValues: { 
+      expiryWarningDays: appSettings?.expiryWarningDays || 7, // Initialize with context or a fallback
     },
   });
 
   useEffect(() => {
-    // Initialize form with settings once they are loaded or with defaults
-    if (!isLoadingSettings) {
+    if (!isLoadingSettings && appSettings) {
       settingsHookForm.reset({
           expiryWarningDays: appSettings.expiryWarningDays,
       });
@@ -56,17 +64,14 @@ export function SettingsForm() {
     const storedTheme = localStorage.getItem('theme');
     if (storedTheme) {
       setSelectedTheme(storedTheme);
-      // Apply theme immediately if stored
       if (storedTheme === 'dark') {
         document.documentElement.classList.add('dark');
       } else {
         document.documentElement.classList.remove('dark');
       }
     } else {
-      // Fallback to checking class on documentElement if no theme is stored
       const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
       setSelectedTheme(currentTheme);
-      localStorage.setItem('theme', currentTheme); // Optionally save default if not set
     }
   }, []);
 
@@ -164,6 +169,67 @@ export function SettingsForm() {
           </RadioGroup>
         </CardContent>
       </Card>
+
+      {currentUser?.isSuperAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              错误日志与诊断
+            </CardTitle>
+            <CardDescription>
+              查看应用运行时捕获到的客户端错误，并可导出用于诊断。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 border rounded-md bg-muted/50">
+                <div>
+                    <p className="text-sm font-medium">已记录错误数量</p>
+                    <p className="text-2xl font-bold">{errorLogs.length}</p>
+                </div>
+                <BookText className="w-8 h-8 text-muted-foreground" />
+            </div>
+            
+            {errorLogs.length > 0 && (
+              <ScrollArea className="h-64 w-full rounded-md border p-3">
+                <div className="space-y-3">
+                  {errorLogs.slice().reverse().map(log => ( // Show newest first
+                    <div key={log.id} className="p-2 border rounded-md bg-background text-xs">
+                      <p><strong>时间:</strong> {formatISO(new Date(log.timestamp), { representation: 'complete' })}</p>
+                      <p><strong>类型:</strong> {log.errorType}</p>
+                      <p><strong>消息:</strong> {log.message}</p>
+                      {log.url && <p><strong>URL:</strong> {log.url}</p>}
+                      {log.stack && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-muted-foreground">堆栈信息</summary>
+                          <pre className="mt-1 whitespace-pre-wrap text-muted-foreground/80 bg-muted p-1 rounded text-[0.7rem] leading-tight">{log.stack}</pre>
+                        </details>
+                      )}
+                       {log.componentStack && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-muted-foreground">组件堆栈</summary>
+                          <pre className="mt-1 whitespace-pre-wrap text-muted-foreground/80 bg-muted p-1 rounded text-[0.7rem] leading-tight">{log.componentStack}</pre>
+                        </details>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+            {errorLogs.length === 0 && (
+                <p className="text-sm text-muted-foreground">暂无错误日志记录。</p>
+            )}
+            <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <Button onClick={exportErrorLogs} variant="outline" className="flex-1" disabled={errorLogs.length === 0}>
+                <Download className="mr-2 h-4 w-4" /> 导出错误日志
+              </Button>
+              <Button onClick={clearErrorLogs} variant="destructive" className="flex-1" disabled={errorLogs.length === 0}>
+                <Trash2 className="mr-2 h-4 w-4" /> 清除错误日志
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

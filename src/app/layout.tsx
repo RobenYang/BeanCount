@@ -6,6 +6,8 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeInitializer } from '@/components/ThemeInitializer';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { ErrorProvider } from '@/contexts/ErrorContext'; // Import ErrorProvider
+import ErrorBoundary from '@/components/ErrorBoundary'; // Import ErrorBoundary
 
 
 const geistSans = GeistSans;
@@ -24,11 +26,15 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <body className={`${geistSans.variable} font-sans antialiased`}>
-        <AuthProvider>
-          <ThemeInitializer />
-          {children}
-          <Toaster />
-        </AuthProvider>
+        <ErrorProvider> {/* Wrap AuthProvider (and thus the whole app) with ErrorProvider */}
+          <AuthProvider>
+            <ThemeInitializer />
+            <ErrorBoundary> {/* Wrap children with ErrorBoundary */}
+              {children}
+            </ErrorBoundary>
+            <Toaster />
+          </AuthProvider>
+        </ErrorProvider>
       </body>
     </html>
   );

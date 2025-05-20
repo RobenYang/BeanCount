@@ -76,3 +76,13 @@ export interface User {
   password?: string; // Storing plain text for prototype, normally this would be securely hashed
   isSuperAdmin?: boolean;
 }
+
+export interface ClientErrorLog {
+  id: string;
+  timestamp: string;
+  message: string;
+  stack?: string;
+  errorType?: string; // e.g., 'React ErrorBoundary', 'Global onerror', 'Unhandled Promise Rejection'
+  componentStack?: string; // From React ErrorInfo
+  url?: string; // window.location.href
+}
