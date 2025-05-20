@@ -3,22 +3,19 @@
 
 import type { Product, Batch } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
-import { ScrollArea } from "@/components/ui/scroll-area";
 import NextImage from "next/image"; 
 import { Button } from "../ui/button";
 import { Archive, Package } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react"; 
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; 
 import { useInventory } from "@/contexts/InventoryContext";
 
 interface ProductSummaryCardProps {
   product: Product;
-  batches: Batch[];
+  batches: Batch[]; // Still needed for nearing expiry badge logic
   totalQuantity: number;
   onArchiveProduct?: (productId: string) => void;
 }
@@ -93,81 +90,13 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           </div>
 
         </CardHeader>
-        <CardContent className="flex-grow pt-0 pb-2">
-          {batches.length > 0 ? (
-            <ScrollArea className="h-48">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {isIngredient && <TableHead className="text-xs">生产日期</TableHead>}
-                    {isIngredient && <TableHead className="text-xs">过期日期</TableHead>}
-                    {!isIngredient && <TableHead className="text-xs">入库/生产日期</TableHead>}
-                    <TableHead className="text-xs text-right">数量</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? new Date(a.productionDate).getTime() - new Date(b.productionDate).getTime() : (a.createdAt && b.createdAt ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : 0 )))).map((batch) => {
-                    let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-                    
-                    const displayDate = !isIngredient && batch.productionDate ? batch.productionDate : batch.createdAt;
-
-                    let expiryDateFormatted = 'N/A';
-                    let daysLeftDisplay = "";
-
-                    if (isIngredient && batch.expiryDate) {
-                      const expiryDateObj = parseISO(batch.expiryDate);
-                      expiryDateFormatted = format(expiryDateObj, "yy-MM-dd", { locale: zhCN });
-                      const daysToExpiry = differenceInDays(expiryDateObj, new Date());
-                      if (daysToExpiry < 0) {
-                          expiryBadgeVariant = "destructive";
-                          daysLeftDisplay = `已过期 ${Math.abs(daysToExpiry)}天`;
-                      } else {
-                          daysLeftDisplay = `剩 ${daysToExpiry}天`;
-                          if (daysToExpiry <= appSettings.expiryWarningDays) expiryBadgeVariant = "outline";
-                      }
-                    } else if (isIngredient && !batch.expiryDate) {
-                      daysLeftDisplay = "无限期"; // Or any placeholder for ingredients without an expiry
-                    }
-
-
-                    return (
-                      <TableRow key={batch.id}>
-                         {isIngredient && (
-                          <TableCell className="py-1.5 text-xs">
-                            {batch.productionDate ? format(parseISO(batch.productionDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'}
-                          </TableCell>
-                         )}
-                        {isIngredient && (
-                          <TableCell className="py-1.5 text-xs">
-                            {batch.expiryDate ? (
-                              <Badge variant={expiryBadgeVariant} className="text-xs leading-tight">
-                                <div className="flex flex-col items-start text-left">
-                                  <span>{expiryDateFormatted}</span>
-                                  {daysLeftDisplay && <span>{daysLeftDisplay}</span>}
-                                </div>
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">无限期</span>
-                            )}
-                          </TableCell>
-                        )}
-                         {!isIngredient && (
-                          <TableCell className="py-1.5 text-xs">
-                            {displayDate ? format(parseISO(displayDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'}
-                          </TableCell>
-                         )}
-                        <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          ) : (
-            <div className="flex items-center justify-center h-48 text-muted-foreground">
-              <p>暂无批次库存。</p>
-            </div>
-          )}
+        {/* CardContent is removed as batch table is no longer displayed here */}
+        {/* If CardContent had other elements, they would remain. Now it is empty and can be omitted or kept minimal. */}
+        <CardContent className="pt-0 pb-2 flex-grow">
+           {/* This content area is now minimal as batch details are removed */}
+           {/* You could add other summary info here if needed, or remove CardContent if truly empty */}
+           {/* Forcing a minimal height for consistency if there are no badges, can be adjusted */}
+           <div className="min-h-[1rem]"></div>
         </CardContent>
         <CardFooter className="pt-2">
           {isLowStock && <Badge variant="destructive">低库存 (阈值: {product.lowStockThreshold})</Badge>}

@@ -62,6 +62,7 @@ export default function DashboardPage() {
       transaction.type === 'OUT' &&
       !transaction.isCorrectionIncrease &&
       transaction.unitCostAtTransaction !== undefined &&
+      transaction.unitCostAtTransaction !== null && // Ensure unitCostAtTransaction is not null
       isWithinInterval(parseISO(transaction.timestamp), { start: sevenDaysAgo, end: today })
     ) {
       return totalValue + (transaction.quantity * transaction.unitCostAtTransaction);
@@ -137,7 +138,7 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        <h2 className="text-2xl font-semibold">产品库存水平</h2>
+        <h2 className="text-2xl font-semibold">产品概览</h2>
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {[...Array(3)].map((_, i) => (
             <Card key={i} className="flex flex-col h-full">
@@ -158,8 +159,8 @@ export default function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent className="flex-grow pt-0 pb-2">
-                 <div className="h-48 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                 <div className="h-12 flex items-center justify-center"> 
+                    {/* Adjusted height as batch table is removed */}
                  </div>
               </CardContent>
               <CardFooter className="pt-2">
@@ -233,7 +234,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <h2 className="text-2xl font-semibold">产品库存水平</h2>
+      <h2 className="text-2xl font-semibold">产品概览</h2>
       {activeProducts.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {activeProducts.map((product) => {
@@ -242,7 +243,7 @@ export default function DashboardPage() {
               <ProductSummaryCard
                 key={product.id}
                 product={product}
-                batches={batches}
+                batches={batches} // batches prop is still needed for expiry badge logic
                 totalQuantity={totalQuantity}
                 onArchiveProduct={archiveProduct}
               />
