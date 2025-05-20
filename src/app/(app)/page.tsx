@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign, Package as PackageIcon } from "lucide-react";
+import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign, Package as PackageIcon, Smile } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -41,9 +41,15 @@ export default function DashboardPage() {
   const { products, getProductStockDetails, archiveProduct, transactions, appSettings } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
+  const [currentDateDisplay, setCurrentDateDisplay] = useState("...");
+  const [currentDayDisplay, setCurrentDayDisplay] = useState("...");
+
 
   useEffect(() => {
     setHasMounted(true);
+    const today = new Date();
+    setCurrentDateDisplay(format(today, "M月d日", { locale: zhCN }));
+    setCurrentDayDisplay(format(today, "EEEE", { locale: zhCN }));
   }, []);
 
   const activeProducts = products.filter(p => !p.isArchived);
@@ -110,6 +116,10 @@ export default function DashboardPage() {
   if (!hasMounted) {
     return (
       <div className="space-y-6">
+        <div className="mb-6 flex items-center text-lg font-medium text-muted-foreground">
+            <Smile className="h-6 w-6 mr-2 text-primary" />
+            <span>正在加载日期...</span>
+        </div>
         <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -165,6 +175,10 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <div className="mb-6 flex items-center text-lg font-medium text-muted-foreground">
+        <Smile className="h-6 w-6 mr-2 text-primary" />
+        今天是 {currentDateDisplay}，{currentDayDisplay}。
+      </div>
       <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -333,3 +347,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
