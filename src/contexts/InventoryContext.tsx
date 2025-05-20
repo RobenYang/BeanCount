@@ -3,7 +3,7 @@
 
 import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory, AppSettings } from '@/lib/types';
 import { nanoid } from 'nanoid';
-import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react'; // Added useCallback
 import { toast } from "@/hooks/use-toast";
 import { addDays, formatISO, parseISO } from 'date-fns';
 
@@ -61,12 +61,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions_zh_v2', []);
   const [appSettings, setAppSettings] = useLocalStorage<AppSettings>('inventory_app_settings_zh_v2', DEFAULT_APP_SETTINGS);
 
-  const updateAppSettings = (newSettings: Partial<AppSettings>) => {
+  const updateAppSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setAppSettings(prevSettings => ({ ...prevSettings, ...newSettings }));
     toast({ title: "成功", description: "设置已保存。" });
-  };
+  }, [setAppSettings]);
 
-  const addProduct = (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
+  const addProduct = useCallback((productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
     if (products.some(p => p.name.toLowerCase() === productData.name.toLowerCase() && !p.isArchived)) {
       toast({ title: "错误", description: `名为 "${productData.name}" 的活动产品已存在。`, variant: "destructive" });
       return;
@@ -80,9 +80,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
     setProducts(prev => [...prev, newProduct]);
     toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
-  };
+  }, [products, setProducts]);
 
-  const editProduct = (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => {
+  const editProduct = useCallback((productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => {
     setProducts(prevProducts =>
       prevProducts.map(p => {
         if (p.id === productId) {
@@ -97,28 +97,30 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return p;
       })
     );
-  };
+  }, [setProducts]);
 
-  const archiveProduct = (productId: string) => {
+  const archiveProduct = useCallback((productId: string) => {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: true } : p));
     toast({ title: "成功", description: "产品已归档。" });
-  };
+  }, [setProducts]);
 
-  const unarchiveProduct = (productId: string) => {
+  const unarchiveProduct = useCallback((productId: string) => {
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: false } : p));
     toast({ title: "成功", description: "产品已取消归档。" });
-  }
+  }, [setProducts]);
 
-  const getProductById = (id: string) => products.find(p => p.id === id);
+  const getProductById = useCallback((id: string) => {
+    return products.find(p => p.id === id);
+  }, [products]);
 
-  const getMostRecentUnitCost = (productId: string): number | undefined => {
+  const getMostRecentUnitCost = useCallback((productId: string): number | undefined => {
     const productBatches = batches
       .filter(b => b.productId === productId)
       .sort((a, b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()); // Sort by creation date, newest first
     return productBatches.length > 0 ? productBatches[0].unitCost : undefined;
-  };
+  }, [batches]);
 
-  const addBatch = (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => {
+  const addBatch = useCallback((batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => {
     const product = getProductById(batchData.productId);
     if (!product) {
       toast({ title: "错误", description: "未找到此批次的产品。", variant: "destructive" });
@@ -132,7 +134,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
        toast({ title: "错误", description: "接收数量必须大于0。", variant: "destructive"});
        return;
     }
-
 
     const batchCreatedAt = formatISO(new Date());
     let productionDateIso: string | null = null;
@@ -148,10 +149,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
       }
     } else { 
-      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : formatISO(new Date()); // Use provided or current for non-ingredient
+      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : formatISO(new Date());
       expiryDateIso = null; 
     }
-
 
     const newBatch: Batch = {
       id: nanoid(),
@@ -179,9 +179,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
     setTransactions(prev => [...prev, newTransaction]);
     toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ¥${newBatch.unitCost.toFixed(2)}` });
-  };
+  }, [getProductById, setBatches, setTransactions]);
 
-  const recordOutflowFromSpecificBatch = (productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
+  const recordOutflowFromSpecificBatch = useCallback((productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
     const product = getProductById(productId);
     if (!product) {
       toast({ title: "错误", description: "未找到产品。", variant: "destructive" });
@@ -193,31 +193,42 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const batchIndex = batches.findIndex(b => b.id === batchId && b.productId === productId);
-    if (batchIndex === -1) {
+    if (batchIndex === -1 && quantityToOutflow > 0) { // Allow correction for non-existent batch IF quantity is negative
       toast({ title: "错误", description: "未找到指定的批次。", variant: "destructive" });
       return;
     }
+    
+    const batch = batches[batchIndex]; // Can be undefined if quantityToOutflow < 0 and batchId is for a non-existent/empty batch
 
-    const batch = batches[batchIndex];
-    if (quantityToOutflow > 0 && batch.currentQuantity < quantityToOutflow) {
-      toast({ title: "错误", description: `所选批次的库存不足。可用: ${batch.currentQuantity}`, variant: "destructive" });
-      return;
+    if (quantityToOutflow > 0) {
+      if (!batch) { // Should have been caught above, but as a safeguard
+         toast({ title: "错误", description: "未找到指定的批次进行出库。", variant: "destructive" });
+         return;
+      }
+      if (batch.currentQuantity < quantityToOutflow) {
+        toast({ title: "错误", description: `所选批次的库存不足。可用: ${batch.currentQuantity}`, variant: "destructive" });
+        return;
+      }
     }
     
     const updatedBatches = [...batches];
-    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
+    if (batch) { // If batch exists, update its quantity
+        updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
+    }
+    // If batch doesn't exist (only possible if quantityToOutflow < 0), we still record transaction but don't update batches.
+    // This scenario needs careful consideration if it's a valid business case. For now, it proceeds.
     
     const newTransaction: Transaction = {
       id: nanoid(),
       productId: product.id,
       productName: product.name,
-      batchId: batch.id,
+      batchId: batchId, // record the intended batchId even if it was problematic for correction
       type: 'OUT',
       quantity: Math.abs(quantityToOutflow),
       timestamp: formatISO(new Date()),
       reason,
       notes,
-      unitCostAtTransaction: batch.unitCost,
+      unitCostAtTransaction: batch ? batch.unitCost : undefined, // Cost might be unknown if correcting a non-existent batch
       isCorrectionIncrease: quantityToOutflow < 0 ? true : undefined,
     };
 
@@ -225,23 +236,23 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     setTransactions(prev => [...prev, newTransaction]);
 
     if (quantityToOutflow < 0) {
-      toast({ title: "成功", description: `为批次 ${batch.id} 的 "${product.name}" 库存更正 ${Math.abs(quantityToOutflow)} ${product.unit}。原因：误操作修正。` });
+      toast({ title: "成功", description: `为批次 ${batchId} 的 "${product.name}" 库存更正 ${Math.abs(quantityToOutflow)} ${product.unit}。原因：误操作修正。` });
     } else {
-      toast({ title: "成功", description: `从批次 ${batch.id} 中为 "${product.name}" 出库 ${quantityToOutflow} ${product.unit} 已记录。` });
+      toast({ title: "成功", description: `从批次 ${batchId} 中为 "${product.name}" 出库 ${quantityToOutflow} ${product.unit} 已记录。` });
     }
-  };
+  }, [batches, getProductById, setBatches, setTransactions]);
 
 
-  const getBatchesByProductId = (productId: string) => {
+  const getBatchesByProductId = useCallback((productId: string) => {
     return batches.filter(b => b.productId === productId);
-  };
+  }, [batches]);
 
-  const getProductStockDetails = (productId: string) => {
+  const getProductStockDetails = useCallback((productId: string) => {
     const productBatches = getBatchesByProductId(productId).filter(b => b.currentQuantity > 0);
     const totalQuantity = productBatches.reduce((sum, batch) => sum + batch.currentQuantity, 0);
     const totalValue = productBatches.reduce((sum, batch) => sum + (batch.currentQuantity * batch.unitCost), 0);
     return { totalQuantity, totalValue, batches: productBatches };
-  };
+  }, [getBatchesByProductId]);
   
   useEffect(() => {
     const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh_v2');
@@ -292,7 +303,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           expiryDateIso = null;
         }
 
-
         const newBatch: Batch = {
           id: nanoid(),
           productId: b_data.productId,
@@ -330,7 +340,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             timestamp: formatISO(addDays(intakeDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
             unitCostAtTransaction: newBatch.unitCost,
-            notes: '初始样本数据 - 模拟出库'
+            notes: '初始样本数据 - 模拟出库',
+            isCorrectionIncrease: false,
           });
         }
       });
@@ -373,5 +384,7 @@ export const useInventory = () => {
   }
   return context;
 };
+
+    
 
     
