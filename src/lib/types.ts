@@ -1,10 +1,12 @@
 
+export type ProductCategory = 'INGREDIENT' | 'NON_INGREDIENT';
+
 export interface Product {
   id: string;
   name: string;
-  category: string;
+  category: ProductCategory;
   unit: string; // e.g., kg, liter, pcs
-  shelfLifeDays: number; // Standard shelf life in days
+  shelfLifeDays: number | null; // Standard shelf life in days, null if not applicable
   createdAt: string; // ISO date string
   isArchived?: boolean; // For soft delete
 }
@@ -13,8 +15,8 @@ export interface Batch {
   id: string;
   productId: string;
   productName?: string; // Denormalized for easier display
-  productionDate: string; // ISO date string
-  expiryDate: string; // ISO date string, calculated
+  productionDate: string | null; // ISO date string, null if not applicable
+  expiryDate: string | null; // ISO date string, calculated, null if not applicable
   initialQuantity: number;
   currentQuantity: number;
   unitCost: number;
@@ -23,7 +25,7 @@ export interface Batch {
 
 export type TransactionType = 'IN' | 'OUT';
 
-export type OutflowReasonValue = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE'; // Removed ADJUSTMENT_INCREASE as it's handled by negative outflow with ADJUSTMENT_DECREASE
+export type OutflowReasonValue = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE';
 
 export interface OutflowReasonItem {
   value: OutflowReasonValue;
@@ -34,7 +36,7 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
   { value: 'SALE', label: '销售' },
   { value: 'SPOILAGE', label: '损耗' },
   { value: 'INTERNAL_USE', label: '内部使用' },
-  { value: 'ADJUSTMENT_DECREASE', label: '误操作修正' }, 
+  { value: 'ADJUSTMENT_DECREASE', label: '误操作修正' },
 ];
 
 

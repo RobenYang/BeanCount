@@ -20,9 +20,18 @@ interface ProductSummaryCardProps {
   onArchiveProduct?: (productId: string) => void;
 }
 
+function formatProductCategoryForDisplay(category: Product['category']): string {
+    if (category === 'INGREDIENT') return '食材';
+    if (category === 'NON_INGREDIENT') return '非食材';
+    return category; // Fallback for any other unexpected values
+}
+
+
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
-  const isLowStock = totalQuantity < 5; 
+  const isLowStock = totalQuantity < 5;
   const nearingExpiryThresholdDays = 7;
+
+  const isIngredient = product.category === 'INGREDIENT';
 
   return (
     <Card className="flex flex-col h-full">
@@ -30,10 +39,10 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
         <div className="flex justify-between items-start">
           <div>
             <CardTitle className="text-xl flex items-center gap-2">
-              <Package className="h-5 w-5 text-primary" /> 
+              <Package className="h-5 w-5 text-primary" />
               {product.name}
             </CardTitle>
-            <CardDescription>{product.category} - 单位: {product.unit}</CardDescription>
+            <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit}</CardDescription>
           </div>
           <div className="flex gap-2">
             {/* <Button variant="ghost" size="icon" asChild>
@@ -48,10 +57,10 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             )}
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 pt-2">
-          <Image 
-            src={`https://placehold.co/64x64.png?text=${product.name.substring(0,1)}`} 
+          <Image
+            src={`https://placehold.co/64x64.png?text=${product.name.substring(0,1)}`}
             alt={product.name}
             width={48}
             height={48}
@@ -63,7 +72,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <p className="text-xs text-muted-foreground">总库存</p>
           </div>
         </div>
-       
+
       </CardHeader>
       <CardContent className="flex-grow pt-0 pb-2">
         {batches.length > 0 ? (
@@ -71,27 +80,42 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="text-xs">过期日期</TableHead>
+                  {isIngredient && <TableHead className="text-xs">过期日期</TableHead>}
                   <TableHead className="text-xs text-right">数量</TableHead>
                   <TableHead className="text-xs text-right">成本/单位</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches.sort((a,b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()).map((batch) => {
-                  const expiryDate = parseISO(batch.expiryDate);
-                  const daysToExpiry = differenceInDays(expiryDate, new Date());
+                {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : 0)).map((batch) => {
                   let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-                  if (daysToExpiry < 0) expiryBadgeVariant = "destructive";
-                  else if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
-                  
+                  let daysToExpiryText = "";
+
+                  if (isIngredient && batch.expiryDate) {
+                    const expiryDate = parseISO(batch.expiryDate);
+                    const daysToExpiry = differenceInDays(expiryDate, new Date());
+                    if (daysToExpiry < 0) {
+                        expiryBadgeVariant = "destructive";
+                        daysToExpiryText = ` (已过期 ${Math.abs(daysToExpiry)}天)`;
+                    } else {
+                        daysToExpiryText = ` (剩 ${daysToExpiry}天)`;
+                        if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
+                    }
+                  }
+
                   return (
                     <TableRow key={batch.id}>
-                      <TableCell className="py-1.5">
-                        <Badge variant={expiryBadgeVariant} className="text-xs">
-                          {format(expiryDate, "yyyy年MM月dd日", { locale: zhCN })}
-                          {daysToExpiry < 0 ? ` (已过期 ${Math.abs(daysToExpiry)}天)` : ` (剩 ${daysToExpiry}天)`}
-                        </Badge>
-                      </TableCell>
+                      {isIngredient && (
+                        <TableCell className="py-1.5">
+                          {batch.expiryDate ? (
+                            <Badge variant={expiryBadgeVariant} className="text-xs">
+                              {format(parseISO(batch.expiryDate), "yyyy年MM月dd日", { locale: zhCN })}
+                              {daysToExpiryText}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">N/A</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
                       <TableCell className="py-1.5 text-right text-sm">¥{batch.unitCost.toFixed(2)}</TableCell>
                     </TableRow>
@@ -108,7 +132,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
       </CardContent>
       <CardFooter className="pt-2">
         {isLowStock && <Badge variant="destructive">低库存</Badge>}
-        {batches.some(b => differenceInDays(parseISO(b.expiryDate), new Date()) <= nearingExpiryThresholdDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
+        {isIngredient && batches.some(b => b.expiryDate && differenceInDays(parseISO(b.expiryDate), new Date()) <= nearingExpiryThresholdDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
           <Badge variant="outline" className="border-yellow-500 text-yellow-600">临近过期</Badge>
         )}
       </CardFooter>

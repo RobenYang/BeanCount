@@ -2,7 +2,7 @@
 "use client";
 
 import { useInventory } from "@/contexts/InventoryContext";
-import type { Product, Batch } from "@/lib/types";
+import type { Product, Batch, ProductCategory } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,7 +15,18 @@ import Image from "next/image";
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-function ProductBatchDetails({ batches, unit }: { batches: Batch[], unit: string }) {
+function formatProductCategory(category: ProductCategory): string {
+  switch (category) {
+    case "INGREDIENT":
+      return "食材";
+    case "NON_INGREDIENT":
+      return "非食材";
+    default:
+      return category;
+  }
+}
+
+function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batch[], unit: string, productCategory: ProductCategory }) {
   if (batches.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">该产品暂无活动批次信息。</p>;
   }
@@ -28,8 +39,8 @@ function ProductBatchDetails({ batches, unit }: { batches: Batch[], unit: string
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="text-xs">生产日期</TableHead>
-            <TableHead className="text-xs">过期日期</TableHead>
+            {productCategory === 'INGREDIENT' && <TableHead className="text-xs">生产日期</TableHead>}
+            {productCategory === 'INGREDIENT' && <TableHead className="text-xs">过期日期</TableHead>}
             <TableHead className="text-xs text-right">初始数量</TableHead>
             <TableHead className="text-xs text-right">当前数量</TableHead>
             <TableHead className="text-xs text-right">单位成本 (¥)</TableHead>
@@ -37,22 +48,40 @@ function ProductBatchDetails({ batches, unit }: { batches: Batch[], unit: string
           </TableRow>
         </TableHeader>
         <TableBody>
-          {batches.sort((a,b) => parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime()).map((batch) => {
-            const expiryDate = parseISO(batch.expiryDate);
-            const daysToExpiry = differenceInDays(expiryDate, new Date());
+          {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : 0)).map((batch) => {
             let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-            if (daysToExpiry < 0) expiryBadgeVariant = "destructive";
-            else if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
+            let daysToExpiryText = "N/A";
+
+            if (productCategory === 'INGREDIENT' && batch.expiryDate) {
+              const expiryDate = parseISO(batch.expiryDate);
+              const daysToExpiry = differenceInDays(expiryDate, new Date());
+              if (daysToExpiry < 0) {
+                expiryBadgeVariant = "destructive";
+                daysToExpiryText = `已过期 ${Math.abs(daysToExpiry)}天`;
+              } else {
+                daysToExpiryText = `剩 ${daysToExpiry}天`;
+                if (daysToExpiry <= nearingExpiryThresholdDays) expiryBadgeVariant = "outline";
+              }
+            }
 
             return (
               <TableRow key={batch.id}>
-                <TableCell className="text-xs">{format(parseISO(batch.productionDate), "yyyy-MM-dd")}</TableCell>
-                <TableCell className="text-xs">
-                  <Badge variant={expiryBadgeVariant} className="text-xs whitespace-nowrap">
-                    {format(expiryDate, "yyyy-MM-dd")}
-                    {daysToExpiry < 0 ? ` (已过期 ${Math.abs(daysToExpiry)}天)` : ` (剩 ${daysToExpiry}天)`}
-                  </Badge>
-                </TableCell>
+                {productCategory === 'INGREDIENT' && (
+                  <TableCell className="text-xs">
+                    {batch.productionDate ? format(parseISO(batch.productionDate), "yyyy-MM-dd") : 'N/A'}
+                  </TableCell>
+                )}
+                {productCategory === 'INGREDIENT' && (
+                  <TableCell className="text-xs">
+                    {batch.expiryDate ? (
+                      <Badge variant={expiryBadgeVariant} className="text-xs whitespace-nowrap">
+                        {format(parseISO(batch.expiryDate), "yyyy-MM-dd")} ({daysToExpiryText})
+                      </Badge>
+                    ) : (
+                      'N/A'
+                    )}
+                  </TableCell>
+                )}
                 <TableCell className="text-xs text-right">{batch.initialQuantity} {unit}</TableCell>
                 <TableCell className="text-xs text-right">{batch.currentQuantity} {unit}</TableCell>
                 <TableCell className="text-xs text-right">{batch.unitCost.toFixed(2)}</TableCell>
@@ -81,7 +110,7 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-3">
-            <Image 
+            <Image
               src={`https://placehold.co/64x64.png?text=${product.name.substring(0,1)}`}
               alt={product.name}
               width={40}
@@ -91,12 +120,12 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
             />
             <div>
               <div className="font-medium">{product.name}</div>
-              <div className="text-xs text-muted-foreground">{product.category}</div>
+              <div className="text-xs text-muted-foreground">{formatProductCategory(product.category)}</div>
             </div>
           </div>
         </TableCell>
         <TableCell>{product.unit}</TableCell>
-        <TableCell>{product.shelfLifeDays} 天</TableCell>
+        <TableCell>{product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
         <TableCell className="text-right">{totalQuantity}</TableCell>
         <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
         <TableCell>{format(parseISO(product.createdAt), "yyyy年MM月dd日")}</TableCell>
@@ -122,7 +151,7 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
       {isExpanded && (
         <TableRow>
           <TableCell colSpan={8}> {/* Adjusted colSpan to match number of columns */}
-            <ProductBatchDetails batches={batches} unit={product.unit} />
+            <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} />
           </TableCell>
         </TableRow>
       )}
@@ -232,4 +261,3 @@ export default function ProductsPage() {
     </div>
   );
 }
-

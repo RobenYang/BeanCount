@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType } from '@/lib/types';
+import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { toast } from "@/hooks/use-toast";
@@ -15,7 +15,7 @@ interface InventoryContextType {
   archiveProduct: (productId: string) => void;
   unarchiveProduct: (productId: string) => void;
   getProductById: (id: string) => Product | undefined;
-  addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => void;
+  addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => void;
   recordOutflowFromSpecificBatch: (productId: string, batchId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
   getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: Batch[] };
@@ -79,7 +79,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
   const getProductById = (id: string) => products.find(p => p.id === id);
 
-  const addBatch = (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => {
+  const addBatch = (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => {
     const product = getProductById(batchData.productId);
     if (!product) {
       toast({ title: "错误", description: "未找到此批次的产品。", variant: "destructive" });
@@ -90,17 +90,34 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const productionDate = new Date(batchData.productionDate);
-    const expiryDate = addDays(productionDate, product.shelfLifeDays);
-    const batchCreatedAt = formatISO(new Date()); 
+    const batchCreatedAt = formatISO(new Date());
+    let productionDateIso: string | null = null;
+    let expiryDateIso: string | null = null;
+
+    if (product.category === 'INGREDIENT') {
+      if (!batchData.productionDate) {
+        toast({ title: "错误", description: "食材类产品必须提供生产日期。", variant: "destructive" });
+        return;
+      }
+      productionDateIso = formatISO(parseISO(batchData.productionDate));
+      if (product.shelfLifeDays && product.shelfLifeDays > 0) {
+        expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
+      }
+    } else { // NON_INGREDIENT
+      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : null; // Can still have a production date if provided
+      expiryDateIso = null; // Non-ingredients don't expire based on shelf life
+    }
+
 
     const newBatch: Batch = {
-      ...batchData,
       id: nanoid(),
+      productId: batchData.productId,
       productName: product.name,
-      expiryDate: formatISO(expiryDate),
-      productionDate: formatISO(productionDate), 
+      productionDate: productionDateIso,
+      expiryDate: expiryDateIso,
+      initialQuantity: batchData.initialQuantity,
       currentQuantity: batchData.initialQuantity,
+      unitCost: batchData.unitCost,
       createdAt: batchCreatedAt,
     };
     setBatches(prev => [...prev, newBatch]);
@@ -112,7 +129,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       batchId: newBatch.id,
       type: 'IN',
       quantity: newBatch.initialQuantity,
-      timestamp: batchCreatedAt, 
+      timestamp: batchCreatedAt,
       unitCostAtTransaction: newBatch.unitCost,
       notes: `批次 ${newBatch.id} 的初始入库`,
     };
@@ -140,15 +157,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
     
     const updatedBatches = [...batches];
-    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow }; 
+    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
     
     const newTransaction: Transaction = {
       id: nanoid(),
       productId: product.id,
       productName: product.name,
       batchId: batch.id,
-      type: 'OUT', 
-      quantity: Math.abs(quantityToOutflow), 
+      type: 'OUT',
+      quantity: Math.abs(quantityToOutflow),
       timestamp: formatISO(new Date()),
       reason,
       notes,
@@ -180,18 +197,20 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh');
-    const batchesExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_batches_zh');
-    const transactionsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_transactions_zh');
-
-    if (!productsExist && !batchesExist && !transactionsExist) {
+    // Only initialize sample data if products don't exist, to preserve user data across sessions
+    if (!productsExist) {
       const sampleProductsData = [
-        { name: '阿拉比卡咖啡豆', category: '咖啡', unit: 'kg', shelfLifeDays: 365 },
-        { name: '全脂牛奶', category: '乳制品', unit: '升', shelfLifeDays: 7 },
-        { name: '香草糖浆', category: '糖浆', unit: '瓶', shelfLifeDays: 730 },
+        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT' as ProductCategory, unit: 'kg', shelfLifeDays: 365 },
+        { name: '全脂牛奶', category: 'INGREDIENT' as ProductCategory, unit: '升', shelfLifeDays: 7 },
+        { name: '香草糖浆', category: 'INGREDIENT' as ProductCategory, unit: '瓶', shelfLifeDays: 730 },
+        { name: '马克杯', category: 'NON_INGREDIENT' as ProductCategory, unit: '个', shelfLifeDays: null },
       ];
       
-      const createdProducts: Product[] = sampleProductsData.map(p => ({
-        ...p,
+      const createdProducts: Product[] = sampleProductsData.map(p_data => ({
+        name: p_data.name,
+        category: p_data.category,
+        unit: p_data.unit,
+        shelfLifeDays: p_data.shelfLifeDays,
         id: nanoid(),
         createdAt: formatISO(addDays(new Date(), -180)), 
         isArchived: false,
@@ -199,10 +218,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       setProducts(createdProducts);
 
       const sampleBatchesData = [
-        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 15 },
-        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 14.5 },
-        { productId: createdProducts[1].id, productName: createdProducts[1].name, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 1.2 },
-        { productId: createdProducts[2].id, productName: createdProducts[2].name, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 8.0 },
+        // Batches for Arabica Coffee Beans
+        { productId: createdProducts[0].id, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 150 },
+        { productId: createdProducts[0].id, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 145 },
+        // Batches for Whole Milk
+        { productId: createdProducts[1].id, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 12 },
+        // Batches for Vanilla Syrup
+        { productId: createdProducts[2].id, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 80 },
+        // Batches for Mugs (Non-ingredient)
+        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, // Non-ingredients can still have a "production" or intake date
       ];
 
       const createdBatches: Batch[] = [];
@@ -212,15 +236,29 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         const product = createdProducts.find(p => p.id === b_data.productId);
         if (!product) throw new Error("Sample product not found for batch");
         
-        const productionDate = addDays(new Date(), b_data.productionDateOffset);
-        const batchCreatedAt = formatISO(productionDate); 
+        const intakeDate = addDays(new Date(), b_data.productionDateOffset); // Using productionDateOffset as intake date
+        const batchCreatedAt = formatISO(intakeDate); 
+
+        let productionDateIso: string | null = null;
+        let expiryDateIso: string | null = null;
+
+        if (product.category === 'INGREDIENT') {
+          productionDateIso = formatISO(intakeDate); // Assume production date is same as intake date for sample
+          if (product.shelfLifeDays) {
+            expiryDateIso = formatISO(addDays(intakeDate, product.shelfLifeDays));
+          }
+        } else { // NON_INGREDIENT
+          productionDateIso = null; // Or intakeDate if desired to track manufacturing date of non-food
+          expiryDateIso = null;
+        }
+
 
         const newBatch: Batch = {
           id: nanoid(),
           productId: b_data.productId,
-          productName: b_data.productName,
-          productionDate: formatISO(productionDate),
-          expiryDate: formatISO(addDays(productionDate, product.shelfLifeDays)),
+          productName: product.name,
+          productionDate: productionDateIso,
+          expiryDate: expiryDateIso,
           initialQuantity: b_data.initialQuantity,
           currentQuantity: b_data.currentQuantity, 
           unitCost: b_data.unitCost,
@@ -249,7 +287,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             batchId: newBatch.id,
             type: 'OUT' as TransactionType,
             quantity: quantityOut,
-            timestamp: formatISO(addDays(productionDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
+            timestamp: formatISO(addDays(intakeDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
             unitCostAtTransaction: newBatch.unitCost,
             notes: '初始样本数据 - 模拟出库'
@@ -259,7 +297,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       
       setBatches(createdBatches);
       setTransactions(createdTransactions);
-      console.log("Sample data initialized with historical batch createdAt dates.");
+      console.log("Sample data initialized with product categories and historical batch createdAt dates.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
