@@ -22,33 +22,34 @@ import type { Product } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { format, isValid, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
-import { CalendarIcon, Archive } from "lucide-react";
+import { CalendarIcon, Archive, Image as ImageIconLucide } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEffect } from "react";
+import NextImage from "next/image";
+import { toast } from "@/hooks/use-toast";
+
 
 const stockIntakeFormSchemaBase = z.object({
   productId: z.string().min(1, "必须选择产品。"),
-  productionDate: z.date().optional().nullable(), // Optional at schema level
+  productionDate: z.date().optional().nullable(), 
   initialQuantity: z.coerce.number().min(1, { message: "接收数量至少为1。" }),
   unitCost: z.coerce.number().min(0, "单位成本不能为负且为必填项。"),
 });
 
-// We need a way to access product type inside superRefine, or validate onSubmit
-// For simplicity, we'll make productionDate optional and handle requirement in onSubmit or rely on UI conditional rendering.
 
 type StockIntakeFormValues = z.infer<typeof stockIntakeFormSchemaBase>;
 
 export function StockIntakeForm() {
-  const { products, addBatch, getProductById } = useInventory();
+  const { products, addBatch, getProductById, getMostRecentUnitCost } = useInventory();
   const activeProducts = products.filter(p => !p.isArchived);
 
   const form = useForm<StockIntakeFormValues>({
-    resolver: zodResolver(stockIntakeFormSchemaBase), // Use base, refinement handled in submit/UI
+    resolver: zodResolver(stockIntakeFormSchemaBase),
     defaultValues: {
       productId: "",
       productionDate: null,
-      initialQuantity: undefined,
-      unitCost: undefined,
+      initialQuantity: undefined, 
+      unitCost: undefined, 
     },
   });
 
@@ -56,11 +57,23 @@ export function StockIntakeForm() {
   const selectedProduct = selectedProductId ? getProductById(selectedProductId) : null;
 
   useEffect(() => {
-    // Reset productionDate if product changes and it's not an ingredient
-    if (selectedProduct && selectedProduct.category !== 'INGREDIENT') {
+    if (selectedProduct) {
+      if (selectedProduct.category !== 'INGREDIENT') {
+        form.setValue("productionDate", null);
+      }
+      const recentCost = getMostRecentUnitCost(selectedProduct.id);
+      if (recentCost !== undefined) {
+        form.setValue("unitCost", recentCost, { shouldValidate: true, shouldDirty: true });
+      } else {
+        // If no recent cost, clear it or set to a default if desired (e.g., 0)
+        form.setValue("unitCost", undefined); // Or some other default
+      }
+    } else {
+      form.setValue("unitCost", undefined);
       form.setValue("productionDate", null);
     }
-  }, [selectedProduct, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProduct, form.setValue, getMostRecentUnitCost]);
 
 
   function onSubmit(data: StockIntakeFormValues) {
@@ -79,6 +92,11 @@ export function StockIntakeForm() {
       form.setError("unitCost", { type: "manual", message: "单位成本为必填项且不能为负。" });
       return;
     }
+     if (data.initialQuantity === undefined || data.initialQuantity <=0) { // Ensure initialQuantity is also checked
+        form.setError("initialQuantity", { type: "manual", message: "接收数量必须大于0。" });
+        return;
+    }
+
 
     addBatch({
       productId: data.productId,
@@ -93,6 +111,10 @@ export function StockIntakeForm() {
         unitCost: undefined,
     });
   }
+  
+  const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(selectedProduct?.name?.substring(0,1) || '?')}`;
+  const imageSrc = selectedProduct?.imageUrl || placeholderImage;
+
 
   return (
     <Card className="max-w-2xl mx-auto">
@@ -129,6 +151,26 @@ export function StockIntakeForm() {
                 </FormItem>
               )}
             />
+
+            {selectedProduct && (
+              <div className="my-4 flex items-center gap-4 p-3 border rounded-md bg-muted/30">
+                <NextImage
+                  src={imageSrc}
+                  alt={selectedProduct.name}
+                  width={64}
+                  height={64}
+                  className="rounded-md object-cover aspect-square"
+                  data-ai-hint="product item"
+                />
+                <div>
+                    <h4 className="font-semibold">{selectedProduct.name}</h4>
+                    <p className="text-sm text-muted-foreground">
+                        类别: {selectedProduct.category === 'INGREDIENT' ? '食材' : '非食材'} | 单位: {selectedProduct.unit}
+                    </p>
+                </div>
+              </div>
+            )}
+
 
             {selectedProduct && selectedProduct.category === 'INGREDIENT' && (
               <FormField
@@ -236,3 +278,5 @@ export function StockIntakeForm() {
     </Card>
   );
 }
+
+    

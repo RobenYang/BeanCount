@@ -8,7 +8,6 @@ import { toast } from "@/hooks/use-toast";
 import { addDays, formatISO, parseISO } from 'date-fns';
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
-  // lowStockThreshold: 5, // Removed global threshold
   expiryWarningDays: 7,
 };
 
@@ -18,10 +17,11 @@ interface InventoryContextType {
   transactions: Transaction[];
   appSettings: AppSettings;
   addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => void;
-  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => void; // Category not editable for now
+  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => void;
   archiveProduct: (productId: string) => void;
   unarchiveProduct: (productId: string) => void;
   getProductById: (id: string) => Product | undefined;
+  getMostRecentUnitCost: (productId: string) => number | undefined;
   addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => void;
   recordOutflowFromSpecificBatch: (productId: string, batchId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
@@ -56,7 +56,7 @@ const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<R
 
 
 export const InventoryProvider = ({ children }: { children: ReactNode }) => {
-  const [products, setProducts] = useLocalStorage<Product[]>('inventory_products_zh_v2', []); // v2 for new product structure
+  const [products, setProducts] = useLocalStorage<Product[]>('inventory_products_zh_v2', []);
   const [batches, setBatches] = useLocalStorage<Batch[]>('inventory_batches_zh_v2', []);
   const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions_zh_v2', []);
   const [appSettings, setAppSettings] = useLocalStorage<AppSettings>('inventory_app_settings_zh_v2', DEFAULT_APP_SETTINGS);
@@ -86,10 +86,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     setProducts(prevProducts =>
       prevProducts.map(p => {
         if (p.id === productId) {
-          // Check for name conflict if name is being changed
           if (updatedProductData.name && updatedProductData.name !== p.name && prevProducts.some(op => op.id !== productId && op.name.toLowerCase() === updatedProductData.name!.toLowerCase() && !op.isArchived)) {
             toast({ title: "错误", description: `名为 "${updatedProductData.name}" 的另一个活动产品已存在。`, variant: "destructive" });
-            return p; // Return original product if name conflicts
+            return p; 
           }
           const updatedProduct = { ...p, ...updatedProductData };
            toast({ title: "成功", description: `产品 "${updatedProduct.name}" 已更新。` });
@@ -111,6 +110,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   }
 
   const getProductById = (id: string) => products.find(p => p.id === id);
+
+  const getMostRecentUnitCost = (productId: string): number | undefined => {
+    const productBatches = batches
+      .filter(b => b.productId === productId)
+      .sort((a, b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()); // Sort by creation date, newest first
+    return productBatches.length > 0 ? productBatches[0].unitCost : undefined;
+  };
 
   const addBatch = (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => {
     const product = getProductById(batchData.productId);
@@ -142,7 +148,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
       }
     } else { 
-      productionDateIso = null; 
+      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : formatISO(new Date()); // Use provided or current for non-ingredient
       expiryDateIso = null; 
     }
 
@@ -238,12 +244,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   };
   
   useEffect(() => {
-    const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh_v2'); // Check for new key
+    const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh_v2');
     if (!productsExist) {
       const sampleProductsData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>[] = [
-        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 5, imageUrl: undefined },
+        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 5, imageUrl: 'https://placehold.co/300x300.png' },
         { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, lowStockThreshold: 10, imageUrl: undefined },
-        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, lowStockThreshold: 3, imageUrl: undefined },
+        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, lowStockThreshold: 3, imageUrl: 'https://placehold.co/400x300.png' },
         { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, lowStockThreshold: 12, imageUrl: undefined },
       ];
       
@@ -268,7 +274,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
       sampleBatchesData.forEach(b_data => {
         const product = createdProducts.find(p => p.id === b_data.productId);
-        if (!product) return; // Should not happen with current data
+        if (!product) return; 
         
         const intakeDate = addDays(new Date(), b_data.productionDateOffset); 
         const batchCreatedAt = formatISO(intakeDate); 
@@ -282,7 +288,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             expiryDateIso = formatISO(addDays(intakeDate, product.shelfLifeDays));
           }
         } else { 
-          productionDateIso = formatISO(intakeDate); // For Non-ingredient, productionDate can mean intake/mfg date
+          productionDateIso = formatISO(intakeDate); 
           expiryDateIso = null;
         }
 
@@ -331,7 +337,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       
       setBatches(createdBatches);
       setTransactions(createdTransactions);
-      console.log("Sample data v2 initialized with product-specific low stock thresholds.");
+      console.log("Sample data v2 initialized with product-specific low stock thresholds and some image URLs.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -348,6 +354,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       archiveProduct,
       unarchiveProduct,
       getProductById,
+      getMostRecentUnitCost,
       addBatch,
       recordOutflowFromSpecificBatch,
       getBatchesByProductId,
@@ -366,3 +373,5 @@ export const useInventory = () => {
   }
   return context;
 };
+
+    

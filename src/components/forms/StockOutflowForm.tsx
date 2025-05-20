@@ -17,13 +17,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useInventory } from "@/contexts/InventoryContext";
-import type { OutflowReasonItem, Batch } from "@/lib/types"; // Added Batch
+import type { OutflowReasonItem, Batch } from "@/lib/types"; 
 import { OUTFLOW_REASONS_WITH_LABELS } from "@/lib/types";
-import { PackageMinus } from "lucide-react";
+import { PackageMinus, Image as ImageIconLucide } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState, useEffect, useMemo } from "react"; 
 import { format, parseISO } from "date-fns"; 
 import { zhCN } from 'date-fns/locale';
+import NextImage from "next/image";
 
 
 const stockOutflowFormSchema = z.object({
@@ -57,9 +58,9 @@ export function StockOutflowForm() {
     defaultValues: {
       productId: "",
       batchId: "",
-      quantity: 0,
+      quantity: undefined, // Changed to undefined to handle placeholder
       notes: "",
-      reason: undefined, // Initialize reason as undefined
+      reason: undefined, 
     },
   });
 
@@ -68,17 +69,23 @@ export function StockOutflowForm() {
   const selectedQuantity = form.watch("quantity");
 
   const [availableBatches, setAvailableBatches] = useState<Batch[]>([]);
-
-  const productUnit = useMemo(() => {
-    if (!selectedProductId) return "";
-    return getProductById(selectedProductId)?.unit || "";
+  
+  const selectedProduct = useMemo(() => {
+    if (!selectedProductId) return null;
+    return getProductById(selectedProductId);
   }, [selectedProductId, getProductById]);
+
+  const productUnit = selectedProduct?.unit || "";
 
   useEffect(() => {
     if (selectedProductId) {
       const productBatches = getBatchesByProductId(selectedProductId)
-        .filter(b => b.currentQuantity > 0 || parseFloat(selectedQuantity as any) < 0) // Allow selection if quantity is negative for correction
-        .sort((a, b) => parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime()); 
+        .filter(b => b.currentQuantity > 0 || (typeof selectedQuantity === 'number' && selectedQuantity < 0))
+        .sort((a, b) => {
+            const dateA = a.expiryDate ? parseISO(a.expiryDate) : (a.productionDate ? parseISO(a.productionDate) : parseISO(a.createdAt));
+            const dateB = b.expiryDate ? parseISO(b.expiryDate) : (b.productionDate ? parseISO(b.productionDate) : parseISO(b.createdAt));
+            return dateA.getTime() - dateB.getTime(); // FIFO for expiry, then production, then creation
+        });
       setAvailableBatches(productBatches);
       if (!productBatches.find(b => b.id === form.getValues("batchId"))) {
         form.setValue("batchId", ""); 
@@ -88,14 +95,14 @@ export function StockOutflowForm() {
       form.setValue("batchId", "");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProductId, getBatchesByProductId, form.setValue, form.getValues]); // form.getValues added
+  }, [selectedProductId, getBatchesByProductId, form.setValue, form.getValues, selectedQuantity]);
 
   const selectedBatchDetails = useMemo(() => {
     return availableBatches.find(b => b.id === selectedBatchId);
   }, [availableBatches, selectedBatchId]);
 
   useEffect(() => {
-    const qtyValue = parseFloat(selectedQuantity as any);
+    const qtyValue = typeof selectedQuantity === 'number' ? selectedQuantity : 0;
     if (qtyValue < 0) {
       form.setValue("reason", "ADJUSTMENT_DECREASE", { shouldValidate: true });
     }
@@ -104,30 +111,32 @@ export function StockOutflowForm() {
 
   function onSubmit(data: StockOutflowFormValues) {
     const { productId, batchId, quantity, reason, notes } = data;
-    
+    const numericQuantity = Number(quantity); // Ensure quantity is a number
+
     const batchToOutflow = availableBatches.find(b => b.id === batchId);
-    if (!batchToOutflow && quantity > 0) { // If positive quantity, batch must have stock
+    if (!batchToOutflow && numericQuantity > 0) { 
       form.setError("batchId", { type: "manual", message: "选择的批次信息无效或已无库存。" });
       return;
     }
-    // If quantity is negative, we are adding back, so currentQuantity check is different
-    // For positive outflow, check against current quantity
-    if (quantity > 0 && batchToOutflow && quantity > batchToOutflow.currentQuantity) {
-      form.setError("quantity", { type: "manual", message: `数量 (${quantity} ${productUnit}) 不能超过所选批次的可用库存 (${batchToOutflow.currentQuantity} ${productUnit})。` });
+    
+    if (numericQuantity > 0 && batchToOutflow && numericQuantity > batchToOutflow.currentQuantity) {
+      form.setError("quantity", { type: "manual", message: `数量 (${numericQuantity} ${productUnit}) 不能超过所选批次的可用库存 (${batchToOutflow.currentQuantity} ${productUnit})。` });
       return;
     }
 
-    recordOutflowFromSpecificBatch(productId, batchId, quantity, data.reason as OutflowReasonItem['value'], data.notes);
+    recordOutflowFromSpecificBatch(productId, batchId, numericQuantity, data.reason as OutflowReasonValue, data.notes);
     form.reset({
         productId: "",
         batchId: "",
-        quantity: 0,
+        quantity: undefined,
         reason: undefined,
         notes: "",
     });
     setAvailableBatches([]); 
   }
-
+  
+  const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(selectedProduct?.name?.substring(0,1) || '?')}`;
+  const imageSrc = selectedProduct?.imageUrl || placeholderImage;
 
   return (
     <Card className="max-w-2xl mx-auto">
@@ -164,6 +173,25 @@ export function StockOutflowForm() {
                 </FormItem>
               )}
             />
+            
+            {selectedProduct && (
+              <div className="my-4 flex items-center gap-4 p-3 border rounded-md bg-muted/30">
+                <NextImage
+                  src={imageSrc}
+                  alt={selectedProduct.name}
+                  width={64}
+                  height={64}
+                  className="rounded-md object-cover aspect-square"
+                  data-ai-hint="product item"
+                />
+                <div>
+                    <h4 className="font-semibold">{selectedProduct.name}</h4>
+                    <p className="text-sm text-muted-foreground">
+                        类别: {selectedProduct.category === 'INGREDIENT' ? '食材' : '非食材'} | 单位: {productUnit}
+                    </p>
+                </div>
+              </div>
+            )}
 
             <FormField
               control={form.control}
@@ -178,17 +206,23 @@ export function StockOutflowForm() {
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder={!selectedProductId ? "请先选择产品" : (availableBatches.length === 0 ? "该产品无可用批次" : "选择一个批次")} />
+                        <SelectValue placeholder={!selectedProductId ? "请先选择产品" : (availableBatches.length === 0 && (typeof selectedQuantity !== 'number' || selectedQuantity >= 0) ? "该产品无可用批次" : "选择一个批次")} />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {availableBatches.map((batch) => (
-                        <SelectItem key={batch.id} value={batch.id}>
-                          生产: {format(parseISO(batch.productionDate), "yyyy-MM-dd", { locale: zhCN })} | 
-                          数量: {batch.currentQuantity} {productUnit} | 
-                          过期: {format(parseISO(batch.expiryDate), "yyyy-MM-dd", { locale: zhCN })}
-                        </SelectItem>
-                      ))}
+                      {availableBatches.map((batch) => {
+                         let batchLabel = "";
+                         if (selectedProduct?.category === 'INGREDIENT') {
+                            batchLabel = `生产: ${batch.productionDate ? format(parseISO(batch.productionDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'} | 数量: ${batch.currentQuantity} ${productUnit} | 过期: ${batch.expiryDate ? format(parseISO(batch.expiryDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'}`;
+                         } else {
+                            batchLabel = `入库/生产: ${batch.productionDate ? format(parseISO(batch.productionDate), "yy-MM-dd", { locale: zhCN }) : (batch.createdAt ? format(parseISO(batch.createdAt), "yy-MM-dd", { locale: zhCN }) : 'N/A')} | 数量: ${batch.currentQuantity} ${productUnit}`;
+                         }
+                         return (
+                            <SelectItem key={batch.id} value={batch.id}>
+                                {batchLabel}
+                            </SelectItem>
+                         );
+                      })}
                     </SelectContent>
                   </Select>
                   {selectedBatchDetails && (
@@ -208,7 +242,17 @@ export function StockOutflowForm() {
                 <FormItem>
                   <FormLabel>出库数量 ({productUnit})</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="例如: 2 (负数表示更正)" {...field} disabled={!selectedBatchId} />
+                    <Input 
+                      type="number" 
+                      placeholder="例如: 2 (负数表示更正)" 
+                      {...field} 
+                      value={field.value === undefined ? '' : String(field.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val === '' ? undefined : parseFloat(val));
+                      }}
+                      disabled={!selectedBatchId} 
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -224,7 +268,7 @@ export function StockOutflowForm() {
                   <Select 
                     onValueChange={field.onChange} 
                     value={field.value || ""} 
-                    disabled={!selectedBatchId || (parseFloat(selectedQuantity as any) < 0)}
+                    disabled={!selectedBatchId || (typeof selectedQuantity === 'number' && selectedQuantity < 0)}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -236,7 +280,7 @@ export function StockOutflowForm() {
                         <SelectItem 
                           key={reasonItem.value} 
                           value={reasonItem.value}
-                          disabled={parseFloat(selectedQuantity as any) < 0 && reasonItem.value !== 'ADJUSTMENT_DECREASE'}
+                          disabled={(typeof selectedQuantity === 'number' && selectedQuantity < 0) && reasonItem.value !== 'ADJUSTMENT_DECREASE'}
                         >
                           {reasonItem.label}
                         </SelectItem>
@@ -272,3 +316,4 @@ export function StockOutflowForm() {
   );
 }
 
+    
