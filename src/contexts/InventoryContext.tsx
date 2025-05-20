@@ -13,13 +13,14 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
 
 interface InventoryContextType {
   products: Product[];
-  batches: Batch[];
-  transactions: Transaction[];
-  appSettings: AppSettings;
-  addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => void;
-  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => void;
-  archiveProduct: (productId: string) => void;
-  unarchiveProduct: (productId: string) => void;
+  batches: Batch[]; // Batches will remain in localStorage for now
+  transactions: Transaction[]; // Transactions will remain in localStorage for now
+  appSettings: AppSettings; // AppSettings will remain in localStorage for now
+  isLoadingProducts: boolean;
+  addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => Promise<void>;
+  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => Promise<void>;
+  archiveProduct: (productId: string) => Promise<void>;
+  unarchiveProduct: (productId: string) => Promise<void>;
   getProductById: (id: string) => Product | undefined;
   getMostRecentUnitCost: (productId: string) => number | undefined;
   addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => void;
@@ -31,6 +32,7 @@ interface InventoryContextType {
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
 
+// localStorage hook remains for batches, transactions, and appSettings
 const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [storedValue, setStoredValue] = useState<T>(() => {
     if (typeof window === 'undefined') {
@@ -56,64 +58,132 @@ const useLocalStorage = <T,>(key: string, initialValue: T): [T, React.Dispatch<R
 
 
 export const InventoryProvider = ({ children }: { children: ReactNode }) => {
-  const [products, setProducts] = useLocalStorage<Product[]>('inventory_products_zh_v2', []);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState<boolean>(true);
+  
+  // Batches, transactions, and appSettings continue to use localStorage for now
   const [batches, setBatches] = useLocalStorage<Batch[]>('inventory_batches_zh_v2', []);
   const [transactions, setTransactions] = useLocalStorage<Transaction[]>('inventory_transactions_zh_v2', []);
   const [appSettings, setAppSettings] = useLocalStorage<AppSettings>('inventory_app_settings_zh_v2', DEFAULT_APP_SETTINGS);
+
+  // Fetch products from API on mount
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setIsLoadingProducts(true);
+      try {
+        const response = await fetch('/api/products');
+        if (!response.ok) {
+          throw new Error('Failed to fetch products');
+        }
+        const data = await response.json();
+        setProducts(data);
+      } catch (error) {
+        console.error("Error fetching products:", error);
+        toast({ title: "错误", description: "加载产品数据失败。", variant: "destructive" });
+        setProducts([]); // Set to empty array on error
+      } finally {
+        setIsLoadingProducts(false);
+      }
+    };
+    fetchProducts();
+  }, []);
+
 
   const updateAppSettings = useCallback((newSettings: Partial<AppSettings>) => {
     setAppSettings(prevSettings => ({ ...prevSettings, ...newSettings }));
     toast({ title: "成功", description: "设置已保存。" });
   }, [setAppSettings]);
 
-  const addProduct = useCallback((productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
+  const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => {
+    // Client-side check for uniqueness (can be enhanced on backend)
     if (products.some(p => p.name.toLowerCase() === productData.name.toLowerCase() && !p.isArchived)) {
       toast({ title: "错误", description: `名为 "${productData.name}" 的活动产品已存在。`, variant: "destructive" });
       return;
     }
-    const newProduct: Product = {
-      ...productData,
-      id: nanoid(),
-      createdAt: formatISO(new Date()),
-      isArchived: false,
-      imageUrl: productData.imageUrl || undefined,
-      lowStockThreshold: productData.lowStockThreshold,
-    };
-    setProducts(prev => [...prev, newProduct]);
-    toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
+    try {
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(productData),
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to add product via API');
+      }
+      const newProductFromServer = await response.json();
+      setProducts(prev => [...prev, newProductFromServer]);
+      toast({ title: "成功", description: `产品 "${newProductFromServer.name}" 已添加。` });
+    } catch (error) {
+      console.error("Error adding product:", error);
+      toast({ title: "错误", description: `添加产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
+    }
   }, [products, setProducts]);
 
-  const editProduct = useCallback((productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => {
-    setProducts(prevProducts =>
-      prevProducts.map(p => {
-        if (p.id === productId) {
-          if (updatedProductData.name && updatedProductData.name !== p.name && prevProducts.some(op => op.id !== productId && op.name.toLowerCase() === updatedProductData.name!.toLowerCase() && !op.isArchived)) {
-            toast({ title: "错误", description: `名为 "${updatedProductData.name}" 的另一个活动产品已存在。`, variant: "destructive" });
-            return p; 
-          }
-          const updatedProduct = { ...p, ...updatedProductData };
-           toast({ title: "成功", description: `产品 "${updatedProduct.name}" 已更新。` });
-          return updatedProduct;
-        }
-        return p;
-      })
-    );
-  }, [setProducts]);
+  const editProduct = useCallback(async (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => {
+    toast({
+      title: "功能迁移中",
+      description: "编辑产品功能正在迁移至新后端，目前暂不可用。",
+      variant: "default",
+    });
+    // Placeholder for API call:
+    // try {
+    //   const response = await fetch(`/api/products/${productId}`, { // hypothetical endpoint
+    //     method: 'PUT',
+    //     headers: { 'Content-Type': 'application/json' },
+    //     body: JSON.stringify(updatedProductData),
+    //   });
+    //   if (!response.ok) throw new Error('Failed to edit product');
+    //   const updatedProductFromServer = await response.json();
+    //   setProducts(prevProducts => prevProducts.map(p => (p.id === productId ? updatedProductFromServer : p)));
+    //   toast({ title: "成功", description: `产品 "${updatedProductFromServer.name}" 已更新。` });
+    // } catch (error) {
+    //   console.error("Error editing product:", error);
+    //   toast({ title: "错误", description: "编辑产品失败。", variant: "destructive" });
+    // }
+  }, []);
 
-  const archiveProduct = useCallback((productId: string) => {
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: true } : p));
-    toast({ title: "成功", description: "产品已归档。" });
-  }, [setProducts]);
+  const archiveProduct = useCallback(async (productId: string) => {
+    toast({
+      title: "功能迁移中",
+      description: "归档产品功能正在迁移至新后端，目前暂不可用。",
+      variant: "default",
+    });
+    // Placeholder for API call:
+    // try {
+    //   const response = await fetch(`/api/products/${productId}/archive`, { method: 'POST' }); // hypothetical endpoint
+    //   if (!response.ok) throw new Error('Failed to archive product');
+    //   setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: true } : p));
+    //   toast({ title: "成功", description: "产品已归档。" });
+    // } catch (error) {
+    //   console.error("Error archiving product:", error);
+    //   toast({ title: "错误", description: "归档产品失败。", variant: "destructive" });
+    // }
+  }, []);
 
-  const unarchiveProduct = useCallback((productId: string) => {
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: false } : p));
-    toast({ title: "成功", description: "产品已取消归档。" });
-  }, [setProducts]);
+  const unarchiveProduct = useCallback(async (productId: string) => {
+    toast({
+      title: "功能迁移中",
+      description: "取消归档产品功能正在迁移至新后端，目前暂不可用。",
+      variant: "default",
+    });
+    // Placeholder for API call:
+    // try {
+    //   const response = await fetch(`/api/products/${productId}/unarchive`, { method: 'POST' }); // hypothetical endpoint
+    //   if (!response.ok) throw new Error('Failed to unarchive product');
+    //   setProducts(prev => prev.map(p => p.id === productId ? { ...p, isArchived: false } : p));
+    //   toast({ title: "成功", description: "产品已取消归档。" });
+    // } catch (error) {
+    //   console.error("Error unarchiving product:", error);
+    //   toast({ title: "错误", description: "取消归档产品失败。", variant: "destructive" });
+    // }
+  }, []);
 
   const getProductById = useCallback((id: string) => {
     return products.find(p => p.id === id);
   }, [products]);
 
+  // This function will continue to use localStorage batches for now.
+  // This might lead to inconsistencies if product data is from API and batch data from localStorage.
   const getMostRecentUnitCost = useCallback((productId: string): number | undefined => {
     const productBatches = batches
       .filter(b => b.productId === productId)
@@ -121,8 +191,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     return productBatches.length > 0 ? productBatches[0].unitCost : undefined;
   }, [batches]);
 
+  // Batch and transaction logic remains largely unchanged and continues to use localStorage
   const addBatch = useCallback((batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }) => {
-    const product = getProductById(batchData.productId);
+    const product = getProductById(batchData.productId); // product is now from API-fed state
     if (!product) {
       toast({ title: "错误", description: "未找到此批次的产品。", variant: "destructive" });
       return;
@@ -145,12 +216,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "错误", description: "食材类产品必须提供生产日期。", variant: "destructive" });
         return;
       }
-      productionDateIso = formatISO(parseISO(batchData.productionDate));
-      if (product.shelfLifeDays && product.shelfLifeDays > 0) {
-        expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
+      try {
+        productionDateIso = formatISO(parseISO(batchData.productionDate));
+        if (product.shelfLifeDays && product.shelfLifeDays > 0) {
+          expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
+        }
+      } catch (e) {
+        toast({ title: "错误", description: "生产日期格式无效。", variant: "destructive" });
+        return;
       }
     } else { 
-      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : formatISO(new Date());
+      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : formatISO(new Date()); // Default to now if not provided for non-ingredient
       expiryDateIso = null; 
     }
 
@@ -180,10 +256,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
     setTransactions(prev => [...prev, newTransaction]);
     toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ¥${newBatch.unitCost.toFixed(2)}` });
-  }, [getProductById, setBatches, setTransactions]);
+  }, [getProductById, setBatches, setTransactions, batches]); // Added batches to dependencies of addBatch
 
   const recordOutflowFromSpecificBatch = useCallback((productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
-    const product = getProductById(productId);
+    const product = getProductById(productId); // product is now from API-fed state
     if (!product) {
       toast({ title: "错误", description: "未找到产品。", variant: "destructive" });
       return;
@@ -218,13 +294,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     if (batch) { 
         updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
     } else if (quantityToOutflow < 0) { 
+        // Try to find a unit cost for correction if batch doesn't exist (e.g. full batch correction)
         const productBatches = batches.filter(b => b.productId === productId).sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime());
         if (productBatches.length > 0) {
             actualUnitCostAtTransaction = productBatches[0].unitCost;
         } else {
+            // Fallback to last transaction cost if no batches exist
             const lastProductTransaction = transactions.filter(t => t.productId === productId && t.unitCostAtTransaction !== undefined).sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime());
-            if (lastProductTransaction.length > 0) {
+            if (lastProductTransaction.length > 0 && lastProductTransaction[0].unitCostAtTransaction !== undefined) {
                  actualUnitCostAtTransaction = lastProductTransaction[0].unitCostAtTransaction;
+            } else {
+                 actualUnitCostAtTransaction = 0; // Default to 0 if no cost can be determined
             }
         }
     }
@@ -251,8 +331,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } else {
       toast({ title: "成功", description: `从批次 ${batchId} 中为 "${product.name}" 出库 ${quantityToOutflow} ${product.unit} 已记录。` });
     }
-  }, [batches, getProductById, setBatches, setTransactions, transactions]);
-
+  }, [batches, getProductById, setBatches, setTransactions, transactions]); // Added transactions dependency
 
   const getBatchesByProductId = useCallback((productId: string) => {
     return batches.filter(b => b.productId === productId);
@@ -265,103 +344,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     return { totalQuantity, totalValue, batches: productBatches };
   }, [getBatchesByProductId]);
   
-  useEffect(() => {
-    const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh_v2');
-    if (!productsExist) {
-      console.log("Initializing generic sample data v2.1...");
-      const sampleProductsData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>[] = [
-        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 2, imageUrl: 'https://placehold.co/300x300.png?text=豆', },
-        { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, lowStockThreshold: 3, imageUrl: 'https://placehold.co/300x300.png?text=奶' },
-        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, lowStockThreshold: 1, imageUrl: 'https://placehold.co/300x300.png?text=浆' },
-        { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, lowStockThreshold: 5, imageUrl: 'https://placehold.co/300x300.png?text=杯' },
-      ];
-      
-      const createdProducts: Product[] = sampleProductsData.map((p_data, index) => ({
-        ...p_data,
-        id: `sample_prod_${index + 1}`,
-        createdAt: formatISO(addDays(new Date(), -(180 + index * 10))), // Stagger creation dates
-        isArchived: false,
-      }));
-      setProducts(createdProducts);
-
-      let tempBatches: Batch[] = [];
-      let tempTransactions: Transaction[] = [];
-      
-      const today = new Date();
-
-      // Sample Batches
-      const coffeeProdDate = addDays(today, -60);
-      const coffeeBatch: Batch = {
-        id: 'sample_batch_coffee_1', productId: createdProducts[0].id, productName: createdProducts[0].name,
-        productionDate: formatISO(coffeeProdDate), expiryDate: formatISO(addDays(coffeeProdDate, createdProducts[0].shelfLifeDays!)),
-        initialQuantity: 10, currentQuantity: 8, unitCost: 150, createdAt: formatISO(addDays(coffeeProdDate, 1)) // batch created after production
-      };
-      tempBatches.push(coffeeBatch);
-      tempTransactions.push({
-        id: nanoid(), productId: coffeeBatch.productId, productName: coffeeBatch.productName, batchId: coffeeBatch.id, type: 'IN',
-        quantity: coffeeBatch.initialQuantity, timestamp: coffeeBatch.createdAt, unitCostAtTransaction: coffeeBatch.unitCost, notes: '初始样本数据 - 入库'
-      });
-       tempTransactions.push({ // Example outflow
-        id: nanoid(), productId: coffeeBatch.productId, productName: coffeeBatch.productName, batchId: coffeeBatch.id, type: 'OUT',
-        quantity: 2, timestamp: formatISO(addDays(coffeeBatch.createdAt, 5)), unitCostAtTransaction: coffeeBatch.unitCost, reason: 'SALE', notes: '样本销售'
-      });
-
-
-      const milkProdDate = addDays(today, -10);
-      const milkBatch: Batch = {
-        id: 'sample_batch_milk_1', productId: createdProducts[1].id, productName: createdProducts[1].name,
-        productionDate: formatISO(milkProdDate), expiryDate: formatISO(addDays(milkProdDate, createdProducts[1].shelfLifeDays!)),
-        initialQuantity: 5, currentQuantity: 3, unitCost: 12, createdAt: formatISO(addDays(milkProdDate, 1))
-      };
-      tempBatches.push(milkBatch);
-      tempTransactions.push({
-        id: nanoid(), productId: milkBatch.productId, productName: milkBatch.productName, batchId: milkBatch.id, type: 'IN',
-        quantity: milkBatch.initialQuantity, timestamp: milkBatch.createdAt, unitCostAtTransaction: milkBatch.unitCost, notes: '初始样本数据 - 入库'
-      });
-      tempTransactions.push({ // Example outflow
-        id: nanoid(), productId: milkBatch.productId, productName: milkBatch.productName, batchId: milkBatch.id, type: 'OUT',
-        quantity: 2, timestamp: formatISO(addDays(milkBatch.createdAt, 2)), unitCostAtTransaction: milkBatch.unitCost, reason: 'SALE', notes: '样本销售'
-      });
-      
-      const syrupProdDate = addDays(today, -90);
-      const syrupBatch: Batch = {
-        id: 'sample_batch_syrup_1', productId: createdProducts[2].id, productName: createdProducts[2].name,
-        productionDate: formatISO(syrupProdDate), expiryDate: formatISO(addDays(syrupProdDate, createdProducts[2].shelfLifeDays!)),
-        initialQuantity: 20, currentQuantity: 19, unitCost: 80, createdAt: formatISO(addDays(syrupProdDate,1))
-      };
-      tempBatches.push(syrupBatch);
-      tempTransactions.push({
-        id: nanoid(), productId: syrupBatch.productId, productName: syrupBatch.productName, batchId: syrupBatch.id, type: 'IN',
-        quantity: syrupBatch.initialQuantity, timestamp: syrupBatch.createdAt, unitCostAtTransaction: syrupBatch.unitCost, notes: '初始样本数据 - 入库'
-      });
-      tempTransactions.push({ // Example outflow
-        id: nanoid(), productId: syrupBatch.productId, productName: syrupBatch.productName, batchId: syrupBatch.id, type: 'OUT',
-        quantity: 1, timestamp: formatISO(addDays(syrupBatch.createdAt, 10)), unitCostAtTransaction: syrupBatch.unitCost, reason: 'SALE', notes: '样本销售'
-      });
-
-      const mugProdDate = addDays(today, -120); // Production/intake date for non-ingredient
-      const mugBatch: Batch = {
-        id: 'sample_batch_mug_1', productId: createdProducts[3].id, productName: createdProducts[3].name,
-        productionDate: formatISO(mugProdDate), expiryDate: null,
-        initialQuantity: 30, currentQuantity: 25, unitCost: 25, createdAt: formatISO(addDays(mugProdDate,1))
-      };
-      tempBatches.push(mugBatch);
-      tempTransactions.push({
-        id: nanoid(), productId: mugBatch.productId, productName: mugBatch.productName, batchId: mugBatch.id, type: 'IN',
-        quantity: mugBatch.initialQuantity, timestamp: mugBatch.createdAt, unitCostAtTransaction: mugBatch.unitCost, notes: '初始样本数据 - 入库'
-      });
-      tempTransactions.push({ // Example outflow
-        id: nanoid(), productId: mugBatch.productId, productName: mugBatch.productName, batchId: mugBatch.id, type: 'OUT',
-        quantity: 5, timestamp: formatISO(addDays(mugBatch.createdAt, 20)), unitCostAtTransaction: mugBatch.unitCost, reason: 'SALE', notes: '样本销售'
-      });
-      
-      setBatches(tempBatches);
-      setTransactions(tempTransactions);
-      console.log("Generic sample data v2.1 initialized.");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // Removed sample data generation effect for products, as they come from API now.
+  // Sample data for batches and transactions could remain if needed for testing those parts,
+  // but ensure it doesn't conflict with API-driven product IDs.
+  // For simplicity in this step, I am removing all sample data generation from here.
+  // The API route /api/products/route.ts provides its own initial sample products.
 
   return (
     <InventoryContext.Provider value={{
@@ -369,6 +356,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       batches,
       transactions,
       appSettings,
+      isLoadingProducts,
       addProduct,
       editProduct,
       archiveProduct,
@@ -393,4 +381,3 @@ export const useInventory = () => {
   }
   return context;
 };
-

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil, Search as SearchIcon, Filter } from "lucide-react";
+import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil, Search as SearchIcon, Filter, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
@@ -86,10 +86,10 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 {productCategory === 'INGREDIENT' && (
                   <TableCell className="text-xs">
                     {batch.expiryDate ? (
-                      <Badge variant={expiryBadgeVariant} className="text-xs leading-tight">
+                       <Badge variant={expiryBadgeVariant} className="text-xs leading-tight whitespace-normal">
                         <div className="flex flex-col items-start text-left">
                           <span>{format(parseISO(batch.expiryDate), "yyyy-MM-dd")}</span>
-                          {daysToExpiryText && <span>{daysToExpiryText}</span>}
+                          {daysToExpiryText && <span className="block">{daysToExpiryText}</span>}
                         </div>
                       </Badge>
                     ) : (
@@ -176,7 +176,7 @@ function ProductRow({
             <Undo className="mr-2 h-4 w-4" /> 取消归档
           </Button>
         ) : (
-          <React.Fragment>
+          <React.Fragment key="actions">
             <Button variant="ghost" size="icon" onClick={() => onEdit(product)} title="编辑产品">
                 <Pencil className="h-4 w-4" />
             </Button>
@@ -195,7 +195,7 @@ function ProductRow({
   ) : null;
 
   return (
-    <React.Fragment>
+    <>
       {mainRow}
       {detailsRow}
       {isImageModalOpen && product.imageUrl && (
@@ -206,12 +206,12 @@ function ProductRow({
           productName={product.name}
         />
       )}
-    </React.Fragment>
+    </>
   );
 }
 
 export default function ProductsPage() {
-  const { products, archiveProduct, unarchiveProduct } = useInventory();
+  const { products, archiveProduct, unarchiveProduct, isLoadingProducts } = useInventory(); // Added isLoadingProducts
   const [hasMounted, setHasMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -225,7 +225,8 @@ export default function ProductsPage() {
 
 
   const filteredProducts = useMemo(() => {
-    if (!hasMounted) return [];
+    // Wait for client mount AND products to be loaded from API
+    if (!hasMounted || isLoadingProducts) return []; 
     let tempProducts = products;
 
     if (searchTerm) {
@@ -240,17 +241,17 @@ export default function ProductsPage() {
     }
     
     return tempProducts;
-  }, [products, searchTerm, categoryFilter, hasMounted]);
+  }, [products, searchTerm, categoryFilter, hasMounted, isLoadingProducts]);
 
   const productsToDisplayActive = useMemo(() => {
-    if (!hasMounted) return [];
+    if (!hasMounted || isLoadingProducts) return [];
     return filteredProducts.filter(p => !p.isArchived);
-  }, [filteredProducts, hasMounted]);
+  }, [filteredProducts, hasMounted, isLoadingProducts]);
 
   const productsToDisplayArchived = useMemo(() => {
-    if (!hasMounted) return [];
+    if (!hasMounted || isLoadingProducts) return [];
     return filteredProducts.filter(p => p.isArchived);
-  }, [filteredProducts, hasMounted]);
+  }, [filteredProducts, hasMounted, isLoadingProducts]);
 
   const productsToDisplay = activeTab === "active" ? productsToDisplayActive : productsToDisplayArchived;
 
@@ -282,7 +283,7 @@ export default function ProductsPage() {
     return activeTab === 'active' ? '添加一些产品开始吧！' : '您归档的产品将显示在此处。';
   };
 
-  if (!hasMounted) {
+  if (!hasMounted || isLoadingProducts) { // Show skeleton if not mounted OR products are loading
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -338,13 +339,7 @@ export default function ProductsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-        {productToEdit && ( // Ensure productToEdit is not null before rendering form
-            <EditProductForm 
-            product={productToEdit}
-            isOpen={isEditModalOpen}
-            onClose={handleCloseEditModal}
-            />
-        )}
+        {/* Edit modal doesn't need to be in skeleton, it appears on interaction */}
       </div>
     );
   }
@@ -423,10 +418,14 @@ export default function ProductsPage() {
           ) : (
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
-                <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold">{getNoProductMessage()}</h3>
-                <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>
-                {!(searchTerm || categoryFilter !== 'ALL') && activeTab === 'active' && (
+                {isLoadingProducts ? (
+                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                ) : (
+                  <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
+                )}
+                <h3 className="text-xl font-semibold">{isLoadingProducts ? "正在加载产品..." : getNoProductMessage()}</h3>
+                {!isLoadingProducts && <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>}
+                {!isLoadingProducts && !(searchTerm || categoryFilter !== 'ALL') && activeTab === 'active' && (
                     <Button asChild>
                         <Link href="/products/add">添加新产品</Link>
                     </Button>
@@ -463,15 +462,19 @@ export default function ProductsPage() {
           ) : (
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
-                <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold">{getNoProductMessage()}</h3>
-                <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>
+                {isLoadingProducts ? (
+                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                ) : (
+                  <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
+                )}
+                <h3 className="text-xl font-semibold">{isLoadingProducts ? "正在加载产品..." : getNoProductMessage()}</h3>
+                {!isLoadingProducts && <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>}
               </CardContent>
             </Card>
           )}
         </TabsContent>
       </Tabs>
-      {productToEdit && ( // Ensure productToEdit is not null before rendering form
+      {productToEdit && ( 
         <EditProductForm 
             product={productToEdit}
             isOpen={isEditModalOpen}
@@ -481,6 +484,3 @@ export default function ProductsPage() {
     </div>
   );
 }
-    
-
-    
