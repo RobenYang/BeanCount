@@ -12,13 +12,13 @@ import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
-import { useState, Fragment, useMemo, useEffect } from "react"; // Added useEffect
+import React, { useState, Fragment, useMemo, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton"; // Added Skeleton import
+import { Skeleton } from "@/components/ui/skeleton";
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -143,13 +143,11 @@ function ProductRow({
   };
 
   const mainRow = (
-    <TableRow key={`${product.id}-main`}>
-      <TableCell>
+    <TableRow key={`${product.id}-main`}><TableCell>
         <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </Button>
-      </TableCell>
-      <TableCell>
+      </TableCell><TableCell>
         <div className="flex items-center gap-3">
           <div
             className={`rounded-md overflow-hidden ${product.imageUrl ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
@@ -172,43 +170,32 @@ function ProductRow({
             <div className="font-medium">{product.name}</div>
           </div>
         </div>
-      </TableCell>
-      <TableCell>{formatProductCategory(product.category)}</TableCell>
-      <TableCell>{product.unit}</TableCell>
-      <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
-      <TableCell className="text-right">{product.lowStockThreshold}</TableCell>
-      <TableCell className="text-right">{totalQuantity}</TableCell>
-      <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
-      <TableCell>{product.createdAt ? format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm", {locale: zhCN}) : 'N/A'}</TableCell>
-      <TableCell className="text-right space-x-1">
+      </TableCell><TableCell>{formatProductCategory(product.category)}</TableCell><TableCell>{product.unit}</TableCell><TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell><TableCell className="text-right">{product.lowStockThreshold}</TableCell><TableCell className="text-right">{totalQuantity}</TableCell><TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell><TableCell>{product.createdAt ? format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm", {locale: zhCN}) : 'N/A'}</TableCell><TableCell className="text-right space-x-1">
         {product.isArchived ? (
           <Button variant="ghost" size="sm" onClick={() => onUnarchive(product.id)} title="取消归档产品">
             <Undo className="mr-2 h-4 w-4" /> 取消归档
           </Button>
         ) : (
-          <>
+          <React.Fragment>
             <Button variant="ghost" size="icon" onClick={() => onEdit(product)} title="编辑产品">
                 <Pencil className="h-4 w-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={() => onArchive(product.id)} title="归档产品">
               <Archive className="h-4 w-4" />
             </Button>
-          </>
+          </React.Fragment>
         )}
-      </TableCell>
-    </TableRow>
+      </TableCell></TableRow>
   );
   
   const detailsRow = isExpanded ? (
-    <TableRow key={`${product.id}-details`}>
-      <TableCell colSpan={10}> 
+    <TableRow key={`${product.id}-details`}><TableCell colSpan={10}>
         <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
-      </TableCell>
-    </TableRow>
+      </TableCell></TableRow>
   ) : null;
 
   return (
-    <>
+    <React.Fragment>
       {mainRow}
       {detailsRow}
       {isImageModalOpen && product.imageUrl && (
@@ -219,13 +206,13 @@ function ProductRow({
           productName={product.name}
         />
       )}
-    </>
+    </React.Fragment>
   );
 }
 
 export default function ProductsPage() {
   const { products, archiveProduct, unarchiveProduct } = useInventory();
-  const [hasMounted, setHasMounted] = useState(false); // Added hasMounted state
+  const [hasMounted, setHasMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
@@ -238,7 +225,7 @@ export default function ProductsPage() {
 
 
   const filteredProducts = useMemo(() => {
-    if (!hasMounted) return []; // Return empty if not mounted
+    if (!hasMounted) return [];
     let tempProducts = products;
 
     if (searchTerm) {
@@ -330,7 +317,7 @@ export default function ProductsPage() {
                 </TableHeader>
                 <TableBody>
                   {[...Array(3)].map((_, i) => (
-                    <TableRow key={i}>
+                    <TableRow key={`skeleton-row-${i}`}>
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
                       <TableCell><div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div></TableCell>
                       <TableCell><Skeleton className="h-5 w-16" /></TableCell>
@@ -351,11 +338,13 @@ export default function ProductsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-        <EditProductForm 
-          product={productToEdit}
-          isOpen={isEditModalOpen}
-          onClose={handleCloseEditModal}
-        />
+        {productToEdit && ( // Ensure productToEdit is not null before rendering form
+            <EditProductForm 
+            product={productToEdit}
+            isOpen={isEditModalOpen}
+            onClose={handleCloseEditModal}
+            />
+        )}
       </div>
     );
   }
@@ -482,11 +471,13 @@ export default function ProductsPage() {
           )}
         </TabsContent>
       </Tabs>
-      <EditProductForm 
-        product={productToEdit}
-        isOpen={isEditModalOpen}
-        onClose={handleCloseEditModal}
-      />
+      {productToEdit && ( // Ensure productToEdit is not null before rendering form
+        <EditProductForm 
+            product={productToEdit}
+            isOpen={isEditModalOpen}
+            onClose={handleCloseEditModal}
+        />
+      )}
     </div>
   );
 }
