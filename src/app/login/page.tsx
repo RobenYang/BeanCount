@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +17,13 @@ export default function LoginPage() {
   const auth = useAuth();
   const router = useRouter();
 
+  useEffect(() => {
+    // Redirect if already authenticated and not loading
+    if (!auth.isLoading && auth.isAuthenticated) {
+      router.replace('/'); // Use replace to not add login to history
+    }
+  }, [auth.isLoading, auth.isAuthenticated, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) {
@@ -26,17 +33,21 @@ export default function LoginPage() {
     setIsLoggingIn(true);
     try {
       await auth.login(username, password);
-      // Redirect is handled within auth.login on success
+      // Redirect is handled within auth.login on success, or by the useEffect above if already logged in
     } catch (error) {
       // Error toast is handled within auth.login
       setIsLoggingIn(false);
     }
   };
   
-  // Redirect if already authenticated and not loading
-  if (!auth.isLoading && auth.isAuthenticated) {
-    router.replace('/'); // Use replace to not add login to history
-    return null; // Or a loading spinner while redirecting
+  // If we are still loading auth state, or if we are authenticated and waiting for redirect,
+  // show a loader or nothing to prevent rendering the form.
+  if (auth.isLoading || (!auth.isLoading && auth.isAuthenticated)) {
+    return (
+        <div className="flex h-screen w-screen items-center justify-center bg-background">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </div>
+    );
   }
 
 
@@ -61,6 +72,7 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 disabled={isLoggingIn}
+                placeholder=""
               />
             </div>
             <div className="space-y-2">
@@ -72,6 +84,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 disabled={isLoggingIn}
+                placeholder=""
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoggingIn}>
@@ -95,3 +108,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
