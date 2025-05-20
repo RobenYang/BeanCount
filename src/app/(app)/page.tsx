@@ -4,14 +4,14 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2 } from "lucide-react"; // Removed Package
+import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign } from "lucide-react"; // Added CircleDollarSign
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { subDays, parseISO, isWithinInterval, endOfDay, differenceInDays } from "date-fns";
-import type { Transaction, Product } from "@/lib/types"; // Added Product
-import { Package as PackageIcon } from "lucide-react"; // Renamed imported Package to avoid conflict
+import type { Transaction, Product } from "@/lib/types";
+import { Package as PackageIcon } from "lucide-react";
 
 export default function DashboardPage() {
   const { products, getProductStockDetails, archiveProduct, transactions, appSettings } = useInventory();
@@ -26,16 +26,16 @@ export default function DashboardPage() {
       <div className="space-y-6">
         <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
         
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[...Array(3)].map((_, i) => (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"> {/* Adjusted for 4 cards to wrap nicely */}
+          {[...Array(4)].map((_, i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Skeleton className="h-5 w-2/5" /> {/* Skeleton for title */}
-                <Skeleton className="h-4 w-4 rounded-sm" /> {/* Skeleton for icon */}
+                <Skeleton className="h-5 w-2/5" />
+                <Skeleton className="h-4 w-4 rounded-sm" />
               </CardHeader>
               <CardContent>
-                <Skeleton className="h-8 w-1/3 mb-1" /> {/* Skeleton for value */}
-                <Skeleton className="h-4 w-3/4" /> {/* Skeleton for description */}
+                <Skeleton className="h-8 w-1/3 mb-1" />
+                <Skeleton className="h-4 w-3/4" />
               </CardContent>
             </Card>
           ))}
@@ -93,6 +93,10 @@ export default function DashboardPage() {
     return totalValue;
   }, 0);
 
+  const currentTotalStockValue = activeProducts.reduce((total, product) => {
+    const { totalValue } = getProductStockDetails(product.id);
+    return total + totalValue;
+  }, 0);
 
   const itemsNearingExpiry = activeProducts.flatMap(p => {
     if (p.category !== 'INGREDIENT') return [];
@@ -113,7 +117,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"> {/* For 4 cards, lg:grid-cols-3 wraps to 3 then 1. Or use lg:grid-cols-4 or xl:grid-cols-4 */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">产品总数</CardTitle>
@@ -122,6 +126,16 @@ export default function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{activeProducts.length}</div>
             <p className="text-xs text-muted-foreground">活动产品</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">总库存价值</CardTitle>
+            <CircleDollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">¥{currentTotalStockValue.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">当前所有活动产品的价值总和</p>
           </CardContent>
         </Card>
         <Card>
