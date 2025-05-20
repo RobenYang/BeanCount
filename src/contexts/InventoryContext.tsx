@@ -134,30 +134,42 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const batch = batches[batchIndex];
-    if (batch.currentQuantity < quantityToOutflow) {
+    // If quantityToOutflow is positive, ensure it doesn't exceed current stock
+    if (quantityToOutflow > 0 && batch.currentQuantity < quantityToOutflow) {
       toast({ title: "错误", description: `所选批次的库存不足。可用: ${batch.currentQuantity}`, variant: "destructive" });
       return;
     }
+    
+    // If quantityToOutflow is negative, it means we are adding back to stock (correction)
+    // The currentQuantity check above handles positive outflow.
+    // For negative outflow, there's no "not enough stock" concept in the same way.
 
     const updatedBatches = [...batches];
-    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
+    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow }; // quantityToOutflow is subtracted. If negative, it adds.
     
     const newTransaction: Transaction = {
       id: nanoid(),
       productId: product.id,
       productName: product.name,
       batchId: batch.id,
-      type: 'OUT',
-      quantity: quantityToOutflow,
+      type: 'OUT', // Still 'OUT' type, reason clarifies if it's a correction
+      quantity: Math.abs(quantityToOutflow), // Store absolute quantity for transaction log consistency
       timestamp: formatISO(new Date()),
       reason,
       notes,
       unitCostAtTransaction: batch.unitCost,
+      // Add a field to transaction if the outflow was negative to indicate correction direction
+      isCorrectionIncrease: quantityToOutflow < 0 ? true : undefined,
     };
 
     setBatches(updatedBatches);
     setTransactions(prev => [...prev, newTransaction]);
-    toast({ title: "成功", description: `从批次 ${batch.id} 中为 "${product.name}" 出库 ${quantityToOutflow} 件已记录。` });
+
+    if (quantityToOutflow < 0) {
+      toast({ title: "成功", description: `为批次 ${batch.id} 的 "${product.name}" 库存更正 ${Math.abs(quantityToOutflow)} ${product.unit}。原因：误操作修正。` });
+    } else {
+      toast({ title: "成功", description: `从批次 ${batch.id} 中为 "${product.name}" 出库 ${quantityToOutflow} ${product.unit} 已记录。` });
+    }
   };
 
 

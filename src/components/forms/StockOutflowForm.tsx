@@ -21,19 +21,29 @@ import type { OutflowReasonItem, Batch } from "@/lib/types"; // Added Batch
 import { OUTFLOW_REASONS_WITH_LABELS } from "@/lib/types";
 import { PackageMinus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect, useMemo } from "react"; // Added useState, useEffect, useMemo
-import { format, parseISO } from "date-fns"; // Added format, parseISO
+import { useState, useEffect, useMemo } from "react"; 
+import { format, parseISO } from "date-fns"; 
 import { zhCN } from 'date-fns/locale';
 
 
 const stockOutflowFormSchema = z.object({
   productId: z.string().min(1, "必须选择产品。"),
   batchId: z.string().min(1, "必须选择批次。"),
-  quantity: z.coerce.number().positive("数量必须是正数。"),
+  quantity: z.coerce
+    .number({ invalid_type_error: "数量必须是有效的数字。" })
+    .refine(val => val !== 0, { message: "数量不能为零。" }),
   reason: z.enum(OUTFLOW_REASONS_WITH_LABELS.map(r => r.value) as [string, ...string[]], {
     required_error: "出库原因为必填项。",
   }),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.quantity < 0 && data.reason !== 'ADJUSTMENT_DECREASE') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "当出库数量为负数时，原因必须是“误操作修正”。",
+      path: ["reason"],
+    });
+  }
 });
 
 type StockOutflowFormValues = z.infer<typeof stockOutflowFormSchema>;
@@ -49,11 +59,13 @@ export function StockOutflowForm() {
       batchId: "",
       quantity: 0,
       notes: "",
+      reason: undefined, // Initialize reason as undefined
     },
   });
 
   const selectedProductId = form.watch("productId");
   const selectedBatchId = form.watch("batchId");
+  const selectedQuantity = form.watch("quantity");
 
   const [availableBatches, setAvailableBatches] = useState<Batch[]>([]);
 
@@ -65,35 +77,55 @@ export function StockOutflowForm() {
   useEffect(() => {
     if (selectedProductId) {
       const productBatches = getBatchesByProductId(selectedProductId)
-        .filter(b => b.currentQuantity > 0)
-        .sort((a, b) => parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime()); // Sort by production date
+        .filter(b => b.currentQuantity > 0 || parseFloat(selectedQuantity as any) < 0) // Allow selection if quantity is negative for correction
+        .sort((a, b) => parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime()); 
       setAvailableBatches(productBatches);
-      form.setValue("batchId", ""); 
+      if (!productBatches.find(b => b.id === form.getValues("batchId"))) {
+        form.setValue("batchId", ""); 
+      }
     } else {
       setAvailableBatches([]);
+      form.setValue("batchId", "");
     }
-  }, [selectedProductId, getBatchesByProductId, form]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProductId, getBatchesByProductId, form.setValue, form.getValues]); // form.getValues added
 
   const selectedBatchDetails = useMemo(() => {
     return availableBatches.find(b => b.id === selectedBatchId);
   }, [availableBatches, selectedBatchId]);
 
+  useEffect(() => {
+    const qtyValue = parseFloat(selectedQuantity as any);
+    if (qtyValue < 0) {
+      form.setValue("reason", "ADJUSTMENT_DECREASE", { shouldValidate: true });
+    }
+  }, [selectedQuantity, form]);
+
+
   function onSubmit(data: StockOutflowFormValues) {
     const { productId, batchId, quantity, reason, notes } = data;
     
     const batchToOutflow = availableBatches.find(b => b.id === batchId);
-    if (!batchToOutflow) {
+    if (!batchToOutflow && quantity > 0) { // If positive quantity, batch must have stock
       form.setError("batchId", { type: "manual", message: "选择的批次信息无效或已无库存。" });
       return;
     }
-    if (quantity > batchToOutflow.currentQuantity) {
-      form.setError("quantity", { type: "manual", message: `数量不能超过所选批次的可用库存 (${batchToOutflow.currentQuantity} ${productUnit})。` });
+    // If quantity is negative, we are adding back, so currentQuantity check is different
+    // For positive outflow, check against current quantity
+    if (quantity > 0 && batchToOutflow && quantity > batchToOutflow.currentQuantity) {
+      form.setError("quantity", { type: "manual", message: `数量 (${quantity} ${productUnit}) 不能超过所选批次的可用库存 (${batchToOutflow.currentQuantity} ${productUnit})。` });
       return;
     }
 
     recordOutflowFromSpecificBatch(productId, batchId, quantity, data.reason as OutflowReasonItem['value'], data.notes);
-    form.reset();
-    setAvailableBatches([]); // Clear available batches after successful submission
+    form.reset({
+        productId: "",
+        batchId: "",
+        quantity: 0,
+        reason: undefined,
+        notes: "",
+    });
+    setAvailableBatches([]); 
   }
 
 
@@ -176,7 +208,7 @@ export function StockOutflowForm() {
                 <FormItem>
                   <FormLabel>出库数量 ({productUnit})</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="例如: 2" {...field} disabled={!selectedBatchId} />
+                    <Input type="number" placeholder="例如: 2 (负数表示更正)" {...field} disabled={!selectedBatchId} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -189,7 +221,11 @@ export function StockOutflowForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>出库原因</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ""} disabled={!selectedBatchId}>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    value={field.value || ""} 
+                    disabled={!selectedBatchId || (parseFloat(selectedQuantity as any) < 0)}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="选择一个原因" />
@@ -197,7 +233,11 @@ export function StockOutflowForm() {
                     </FormControl>
                     <SelectContent>
                       {OUTFLOW_REASONS_WITH_LABELS.map((reasonItem) => (
-                        <SelectItem key={reasonItem.value} value={reasonItem.value}>
+                        <SelectItem 
+                          key={reasonItem.value} 
+                          value={reasonItem.value}
+                          disabled={parseFloat(selectedQuantity as any) < 0 && reasonItem.value !== 'ADJUSTMENT_DECREASE'}
+                        >
                           {reasonItem.label}
                         </SelectItem>
                       ))}

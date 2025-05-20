@@ -23,7 +23,7 @@ export interface Batch {
 
 export type TransactionType = 'IN' | 'OUT';
 
-export type OutflowReasonValue = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE' | 'ADJUSTMENT_INCREASE';
+export type OutflowReasonValue = 'SALE' | 'SPOILAGE' | 'INTERNAL_USE' | 'ADJUSTMENT_DECREASE'; // Removed ADJUSTMENT_INCREASE as it's handled by negative outflow with ADJUSTMENT_DECREASE
 
 export interface OutflowReasonItem {
   value: OutflowReasonValue;
@@ -34,9 +34,7 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
   { value: 'SALE', label: '销售' },
   { value: 'SPOILAGE', label: '损耗' },
   { value: 'INTERNAL_USE', label: '内部使用' },
-  { value: 'ADJUSTMENT_DECREASE', label: '误操作修正' }, // Changed label here
-  // Note: ADJUSTMENT_INCREASE is not typically an "outflow" reason for filtering AI summary,
-  // but kept for structural consistency if needed elsewhere.
+  { value: 'ADJUSTMENT_DECREASE', label: '误操作修正' }, 
 ];
 
 
@@ -46,11 +44,12 @@ export interface Transaction {
   productName?: string; // Denormalized
   batchId?: string;
   type: TransactionType;
-  quantity: number; // Positive for IN, positive for OUT (type determines direction)
+  quantity: number; // Always positive, direction determined by type and isCorrectionIncrease
   timestamp: string; // ISO date string
   reason?: OutflowReasonValue;
   notes?: string;
   unitCostAtTransaction?: number; // To record cost at time of transaction
+  isCorrectionIncrease?: boolean; // True if this 'OUT' transaction actually increased stock (negative outflow)
 }
 
 // For AI Stock Analysis Summary
