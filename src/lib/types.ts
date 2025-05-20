@@ -69,3 +69,10 @@ export interface ProductStockAnalysis {
   predictedDepletionDate: string; // Formatted date or a string like 'N/A', '已耗尽', '无法预测'
   daysToDepletion?: number; // Numerical days, could be Infinity or NaN
 }
+
+export interface User {
+  id: string;
+  username: string;
+  password?: string; // Storing plain text for prototype, normally this would be securely hashed
+  isSuperAdmin?: boolean;
+}
