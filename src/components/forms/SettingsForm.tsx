@@ -18,12 +18,12 @@ import { Input } from "@/components/ui/input";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { AppSettings } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Save, Palette, Users, Trash2 } from "lucide-react";
+import { Save, Palette } from "lucide-react"; // Removed Users, Trash2
 import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { useAuth } from '@/contexts/AuthContext';
-import { toast } from "@/hooks/use-toast";
+// import { useAuth } from '@/contexts/AuthContext'; // No longer needed for user management UI
+// import { toast } from "@/hooks/use-toast"; // No longer needed for user management UI
 
 const settingsFormSchema = z.object({
   expiryWarningDays: z.coerce
@@ -34,16 +34,11 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-const addUserFormSchema = z.object({
-    newUsername: z.string().min(3, "用户名至少需要3个字符。"),
-    newPassword: z.string().min(6, "密码至少需要6个字符。"),
-});
-type AddUserFormValues = z.infer<typeof addUserFormSchema>;
-
+// addUserFormSchema and AddUserFormValues are removed
 
 export function SettingsForm() {
   const { appSettings, updateAppSettings } = useInventory();
-  const auth = useAuth();
+  // const auth = useAuth(); // No longer needed for user management UI
   const [selectedTheme, setSelectedTheme] = useState<string>('light');
 
   const settingsHookForm = useForm<SettingsFormValues>({
@@ -53,13 +48,7 @@ export function SettingsForm() {
     },
   });
 
-  const addUserHookForm = useForm<AddUserFormValues>({
-    resolver: zodResolver(addUserFormSchema),
-    defaultValues: {
-        newUsername: "",
-        newPassword: "",
-    }
-  });
+  // addUserHookForm is removed
 
   useEffect(() => {
     settingsHookForm.reset({
@@ -72,6 +61,9 @@ export function SettingsForm() {
     if (storedTheme) {
       setSelectedTheme(storedTheme);
     } else {
+      // Fallback to checking class on documentElement if no theme is stored
+      // This part might be redundant if ThemeInitializer already handles it well,
+      // but it ensures the radio buttons reflect the current theme.
       setSelectedTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
     }
   }, []);
@@ -90,19 +82,7 @@ export function SettingsForm() {
     updateAppSettings(data);
   }
 
-  const handleAddUser = (data: AddUserFormValues) => {
-    auth.addUser(data.newUsername, data.newPassword);
-    addUserHookForm.reset();
-  };
-
-  const handleDeleteUser = (usernameToDelete: string) => {
-    if (usernameToDelete === auth.currentUser?.username && auth.currentUser?.isSuperAdmin) {
-      toast({ title: "错误", description: "不能删除当前登录的超级管理员账户。", variant: "destructive"});
-      return;
-    }
-    auth.deleteUser(usernameToDelete);
-  };
-
+  // handleAddUser and handleDeleteUser functions are removed
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -173,71 +153,7 @@ export function SettingsForm() {
         </CardContent>
       </Card>
 
-      {auth.currentUser?.isSuperAdmin && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" />账户管理</CardTitle>
-            <CardDescription>添加或删除用户账户。(仅超级管理员可见)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div>
-              <h3 className="text-lg font-medium mb-2">现有用户列表</h3>
-              {auth.users.length > 0 ? (
-                <ul className="space-y-2">
-                  {auth.users.map(user => (
-                    <li key={user.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
-                      <span className="font-medium">{user.username} {user.isSuperAdmin ? <span className="text-xs text-primary font-semibold">(超级管理员)</span> : ''}</span>
-                      {!user.isSuperAdmin && (
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user.username)} title={`删除用户 ${user.username}`}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">暂无其他用户。</p>
-              )}
-            </div>
-            <div>
-              <h3 className="text-lg font-medium mb-4 pt-4 border-t">添加新用户</h3>
-              <Form {...addUserHookForm}>
-                <form onSubmit={addUserHookForm.handleSubmit(handleAddUser)} className="space-y-4">
-                    <FormField
-                        control={addUserHookForm.control}
-                        name="newUsername"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>新用户名</FormLabel>
-                                <FormControl>
-                                    <Input {...field} placeholder="输入用户名" />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
-                    <FormField
-                        control={addUserHookForm.control}
-                        name="newPassword"
-                        render={({ field }) => (
-                            <FormItem>
-                                <FormLabel>新密码</FormLabel>
-                                <FormControl>
-                                    <Input type="password" {...field} placeholder="输入密码" />
-                                </FormControl>
-                                <FormMessage />
-                            </FormItem>
-                        )}
-                    />
-                  <Button type="submit" className="w-full">
-                    <Users className="mr-2 h-4 w-4" /> 添加用户
-                  </Button>
-                </form>
-              </Form>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Account Management Card is removed */}
     </div>
   );
 }
