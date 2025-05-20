@@ -8,7 +8,7 @@ const geistSans = GeistSans;
 // Removed geistMono constant
 
 export const metadata: Metadata = {
-  title: '豆豆账本 - 咖啡店库存管理',
+  title: '傲慢与偏见咖啡庄园 - 咖啡店库存管理',
   description: '轻松管理您的咖啡店库存。',
 };
 
