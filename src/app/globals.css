@@ -93,13 +93,13 @@ body {
     --chart-5: 80 20% 65%;
 
     --sidebar-background: 75 10% 18%; /* Darker sidebar background */
-    --sidebar-foreground: var(--foreground);
-    --sidebar-primary: var(--primary);
-    --sidebar-primary-foreground: var(--primary-foreground);
-    --sidebar-accent: var(--accent);
-    --sidebar-accent-foreground: var(--accent-foreground);
-    --sidebar-border: var(--border);
-    --sidebar-ring: var(--ring);
+    --sidebar-foreground: var(--foreground); /* Inherits from main dark foreground */
+    --sidebar-primary: var(--primary); /* Inherits from main dark primary */
+    --sidebar-primary-foreground: var(--primary-foreground); /* Inherits */
+    --sidebar-accent: var(--accent); /* Inherits */
+    --sidebar-accent-foreground: var(--accent-foreground); /* Inherits */
+    --sidebar-border: var(--border); /* Inherits */
+    --sidebar-ring: var(--ring); /* Inherits */
   }
 }
 
