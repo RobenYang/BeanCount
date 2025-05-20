@@ -32,7 +32,7 @@ function formatProductCategoryForDisplay(category: Product['category']): string 
 
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
   const { appSettings } = useInventory(); 
-  const isLowStock = totalQuantity < product.lowStockThreshold; // Use product-specific threshold
+  const isLowStock = totalQuantity < product.lowStockThreshold;
   
   const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
@@ -103,27 +103,32 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                     {isIngredient && <TableHead className="text-xs">过期日期</TableHead>}
                     {!isIngredient && <TableHead className="text-xs">入库/生产日期</TableHead>}
                     <TableHead className="text-xs text-right">数量</TableHead>
-                    <TableHead className="text-xs text-right">成本/单位</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? new Date(a.productionDate).getTime() - new Date(b.productionDate).getTime() : (a.createdAt && b.createdAt ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : 0 )))).map((batch) => {
                     let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-                    let daysToExpiryText = "";
-                    const displayDate = !isIngredient ? batch.productionDate || batch.createdAt : batch.productionDate;
+                    
+                    const displayDate = !isIngredient && batch.productionDate ? batch.productionDate : batch.createdAt;
 
+                    let expiryDateFormatted = 'N/A';
+                    let daysLeftDisplay = "";
 
                     if (isIngredient && batch.expiryDate) {
-                      const expiryDate = parseISO(batch.expiryDate);
-                      const daysToExpiry = differenceInDays(expiryDate, new Date());
+                      const expiryDateObj = parseISO(batch.expiryDate);
+                      expiryDateFormatted = format(expiryDateObj, "yy-MM-dd", { locale: zhCN });
+                      const daysToExpiry = differenceInDays(expiryDateObj, new Date());
                       if (daysToExpiry < 0) {
                           expiryBadgeVariant = "destructive";
-                          daysToExpiryText = ` (已过期 ${Math.abs(daysToExpiry)}天)`;
+                          daysLeftDisplay = `已过期 ${Math.abs(daysToExpiry)}天`;
                       } else {
-                          daysToExpiryText = ` (剩 ${daysToExpiry}天)`;
+                          daysLeftDisplay = `剩 ${daysToExpiry}天`;
                           if (daysToExpiry <= appSettings.expiryWarningDays) expiryBadgeVariant = "outline";
                       }
+                    } else if (isIngredient && !batch.expiryDate) {
+                      daysLeftDisplay = "无限期"; // Or any placeholder for ingredients without an expiry
                     }
+
 
                     return (
                       <TableRow key={batch.id}>
@@ -135,22 +140,23 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                         {isIngredient && (
                           <TableCell className="py-1.5 text-xs">
                             {batch.expiryDate ? (
-                              <Badge variant={expiryBadgeVariant} className="text-xs whitespace-nowrap">
-                                {format(parseISO(batch.expiryDate), "yy-MM-dd", { locale: zhCN })}
-                                {daysToExpiryText}
+                              <Badge variant={expiryBadgeVariant} className="text-xs leading-tight">
+                                <div className="flex flex-col items-start text-left">
+                                  <span>{expiryDateFormatted}</span>
+                                  {daysLeftDisplay && <span>{daysLeftDisplay}</span>}
+                                </div>
                               </Badge>
                             ) : (
-                              <span className="text-xs text-muted-foreground">N/A</span>
+                              <span className="text-xs text-muted-foreground">无限期</span>
                             )}
                           </TableCell>
                         )}
                          {!isIngredient && (
                           <TableCell className="py-1.5 text-xs">
-                            {displayDate ? format(parseISO(displayDate), "yyyy-MM-dd", { locale: zhCN }) : 'N/A'}
+                            {displayDate ? format(parseISO(displayDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'}
                           </TableCell>
                          )}
                         <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
-                        <TableCell className="py-1.5 text-right text-sm">¥{batch.unitCost.toFixed(2)}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -181,3 +187,4 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
     </>
   );
 }
+
