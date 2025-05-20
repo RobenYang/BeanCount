@@ -14,6 +14,7 @@ import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image"; // Renamed to avoid conflict with local Image component
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; // Added ImagePreviewModal
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -41,6 +42,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
           <TableRow>
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">生产日期</TableHead>}
             {productCategory === 'INGREDIENT' && <TableHead className="text-xs">过期日期</TableHead>}
+            {!productCategory || productCategory === 'NON_INGREDIENT' && <TableHead className="text-xs">入库日期</TableHead>}
             <TableHead className="text-xs text-right">初始数量</TableHead>
             <TableHead className="text-xs text-right">当前数量</TableHead>
             <TableHead className="text-xs text-right">单位成本 (¥)</TableHead>
@@ -48,7 +50,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
           </TableRow>
         </TableHeader>
         <TableBody>
-          {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime() : 0))).map((batch) => {
+          {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime() : (a.createdAt && b.createdAt ? parseISO(a.createdAt).getTime() - parseISO(b.createdAt).getTime() : 0 )))).map((batch) => {
             let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
             let daysToExpiryText = "N/A";
 
@@ -82,6 +84,11 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
                     )}
                   </TableCell>
                 )}
+                {productCategory === 'NON_INGREDIENT' && (
+                     <TableCell className="text-xs">
+                        {batch.createdAt ? format(parseISO(batch.createdAt), "yyyy-MM-dd") : 'N/A'}
+                     </TableCell>
+                )}
                 <TableCell className="text-xs text-right">{batch.initialQuantity} {unit}</TableCell>
                 <TableCell className="text-xs text-right">{batch.currentQuantity} {unit}</TableCell>
                 <TableCell className="text-xs text-right">{batch.unitCost.toFixed(2)}</TableCell>
@@ -99,72 +106,99 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
   const { getProductStockDetails } = useInventory();
   const { totalQuantity, totalValue, batches } = getProductStockDetails(product.id);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
-  if (!product) return null; // Should not happen if products are filtered correctly
+  if (!product) return null;
 
-  const imageSrc = product.imageUrl || `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
+  const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
+  const imageSrc = product.imageUrl || placeholderImage;
 
+  const handleImageClick = () => {
+    if (product.imageUrl) {
+      setIsImageModalOpen(true);
+    }
+  };
 
-  const rowContent = (
-    <>
-      <TableRow key={product.id}>
-        <TableCell>
-          <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center gap-3">
+  const mainRow = (
+    <TableRow key={product.id}>
+      <TableCell>
+        <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
+          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </Button>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <div
+            className={`rounded-md overflow-hidden ${product.imageUrl ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+            onClick={handleImageClick}
+            role={product.imageUrl ? "button" : undefined}
+            tabIndex={product.imageUrl ? 0 : undefined}
+            onKeyDown={product.imageUrl ? (e) => (e.key === 'Enter' || e.key === ' ') && handleImageClick() : undefined}
+            aria-label={product.imageUrl ? `查看 ${product.name} 的大图` : product.name}
+          >
             <NextImage
               src={imageSrc}
               alt={product.name}
               width={40}
               height={40}
-              className="rounded-md aspect-square object-cover"
+              className="object-cover aspect-square"
               data-ai-hint="product item"
             />
-            <div>
-              <div className="font-medium">{product.name}</div>
-              <div className="text-xs text-muted-foreground">{formatProductCategory(product.category)}</div>
-            </div>
           </div>
-        </TableCell>
-        <TableCell>{product.unit}</TableCell>
-        <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
-        <TableCell className="text-right">{totalQuantity}</TableCell>
-        <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
-        <TableCell>{format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm")}</TableCell>
-        <TableCell className="text-right">
-          {product.isArchived ? (
-            <Button variant="ghost" size="sm" onClick={() => onUnarchive(product.id)} title="取消归档产品">
-              <Undo className="mr-2 h-4 w-4" /> 取消归档
+          <div>
+            <div className="font-medium">{product.name}</div>
+            <div className="text-xs text-muted-foreground">{formatProductCategory(product.category)}</div>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>{product.unit}</TableCell>
+      <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
+      <TableCell className="text-right">{totalQuantity}</TableCell>
+      <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
+      <TableCell>{product.createdAt ? format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm", {locale: zhCN}) : 'N/A'}</TableCell>
+      <TableCell className="text-right">
+        {product.isArchived ? (
+          <Button variant="ghost" size="sm" onClick={() => onUnarchive(product.id)} title="取消归档产品">
+            <Undo className="mr-2 h-4 w-4" /> 取消归档
+          </Button>
+        ) : (
+          <>
+            {/* <Button variant="ghost" size="icon" asChild title="编辑产品">
+              <Link href={`/products/edit/${product.id}`}>
+                <Edit className="h-4 w-4" />
+              </Link>
+            </Button> */}
+            <Button variant="ghost" size="icon" onClick={() => onArchive(product.id)} title="归档产品">
+              <Archive className="h-4 w-4" />
             </Button>
-          ) : (
-            <>
-              {/* <Button variant="ghost" size="icon" asChild title="编辑产品">
-                <Link href={`/products/edit/${product.id}`}>
-                  <Edit className="h-4 w-4" />
-                </Link>
-              </Button> */}
-              <Button variant="ghost" size="icon" onClick={() => onArchive(product.id)} title="归档产品">
-                <Archive className="h-4 w-4" />
-              </Button>
-            </>
-          )}
-        </TableCell>
-      </TableRow>
-      {isExpanded && (
-        <TableRow key={`${product.id}-details`}>
-          <TableCell colSpan={8}> 
-            <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} />
-          </TableCell>
-        </TableRow>
-      )}
-    </>
+          </>
+        )}
+      </TableCell>
+    </TableRow>
   );
   
-  // If not using Fragment, return an array or single element
-  return isExpanded ? [rowContent.props.children[0], rowContent.props.children[1]] : rowContent.props.children[0];
+  const detailsRow = isExpanded ? (
+    <TableRow key={`${product.id}-details`}>
+      <TableCell colSpan={8}> 
+        <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} />
+      </TableCell>
+    </TableRow>
+  ) : null;
+
+  return (
+    <Fragment>
+      {mainRow}
+      {detailsRow}
+      {isImageModalOpen && product.imageUrl && (
+        <ImagePreviewModal
+          imageUrl={product.imageUrl}
+          isOpen={isImageModalOpen}
+          onClose={() => setIsImageModalOpen(false)}
+          productName={product.name}
+        />
+      )}
+    </Fragment>
+  );
 }
 
 export default function ProductsPage() {
