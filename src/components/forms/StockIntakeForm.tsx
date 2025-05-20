@@ -41,7 +41,7 @@ export function StockIntakeForm() {
     resolver: zodResolver(stockIntakeFormSchema),
     defaultValues: {
       productId: "",
-      initialQuantity: undefined, // Start with undefined, so placeholder shows and validation triggers on first interaction
+      initialQuantity: undefined, 
       unitCost: undefined,
     },
   });
@@ -152,7 +152,18 @@ export function StockIntakeForm() {
                 <FormItem>
                   <FormLabel>接收数量</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="例如: 10" {...field} onChange={e => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))} />
+                    <Input
+                      type="number"
+                      placeholder="例如: 10"
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                      value={field.value === undefined ? '' : String(field.value)} // Ensure controlled input
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val === '' ? undefined : parseFloat(val)); // Update RHF state
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -166,7 +177,19 @@ export function StockIntakeForm() {
                 <FormItem>
                   <FormLabel>单位成本 (¥)</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" placeholder="例如: 15.50" {...field} onChange={e => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))} />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="例如: 15.50"
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                      value={field.value === undefined ? '' : String(field.value)} // Ensure controlled input
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        field.onChange(val === '' ? undefined : parseFloat(val)); // Update RHF state
+                      }}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
