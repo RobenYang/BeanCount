@@ -1,8 +1,9 @@
+
 "use client";
 
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse } from "lucide-react";
+import { AlertTriangle, PackageSearch, Warehouse, Package } from "lucide-react"; // Added Package here
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
