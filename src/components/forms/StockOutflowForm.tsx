@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useInventory } from "@/contexts/InventoryContext";
-import type { OutflowReasonItem, Batch } from "@/lib/types"; 
+import type { OutflowReasonItem, Batch, OutflowReasonValue } from "@/lib/types"; 
 import { OUTFLOW_REASONS_WITH_LABELS } from "@/lib/types";
 import { PackageMinus, Image as ImageIconLucide } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +33,7 @@ const stockOutflowFormSchema = z.object({
   quantity: z.coerce
     .number({ invalid_type_error: "数量必须是有效的数字。" })
     .refine(val => val !== 0, { message: "数量不能为零。" }),
-  reason: z.enum(OUTFLOW_REASONS_WITH_LABELS.map(r => r.value) as [string, ...string[]], {
+  reason: z.enum(OUTFLOW_REASONS_WITH_LABELS.map(r => r.value) as [OutflowReasonValue, ...OutflowReasonValue[]], { // Ensure type consistency for enum
     required_error: "出库原因为必填项。",
   }),
   notes: z.string().optional(),
@@ -58,9 +58,9 @@ export function StockOutflowForm() {
     defaultValues: {
       productId: "",
       batchId: "",
-      quantity: undefined, // Changed to undefined to handle placeholder
+      quantity: undefined, 
       notes: "",
-      reason: undefined, 
+      reason: "SALE", // Default reason set to SALE
     },
   });
 
@@ -105,13 +105,16 @@ export function StockOutflowForm() {
     const qtyValue = typeof selectedQuantity === 'number' ? selectedQuantity : 0;
     if (qtyValue < 0) {
       form.setValue("reason", "ADJUSTMENT_DECREASE", { shouldValidate: true });
+    } else if (form.getValues("reason") === "ADJUSTMENT_DECREASE" && qtyValue >=0) { 
+      // If quantity becomes non-negative, reset reason from ADJ_DECREASE to default or let user choose
+      form.setValue("reason", "SALE", { shouldValidate: true }); // Reset to SALE if quantity no longer negative
     }
   }, [selectedQuantity, form]);
 
 
   function onSubmit(data: StockOutflowFormValues) {
     const { productId, batchId, quantity, reason, notes } = data;
-    const numericQuantity = Number(quantity); // Ensure quantity is a number
+    const numericQuantity = Number(quantity); 
 
     const batchToOutflow = availableBatches.find(b => b.id === batchId);
     if (!batchToOutflow && numericQuantity > 0) { 
@@ -129,7 +132,7 @@ export function StockOutflowForm() {
         productId: "",
         batchId: "",
         quantity: undefined,
-        reason: undefined,
+        reason: "SALE", // Reset to default reason
         notes: "",
     });
     setAvailableBatches([]); 
