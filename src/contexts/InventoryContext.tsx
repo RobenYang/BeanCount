@@ -5,7 +5,7 @@ import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType }
 import { nanoid } from 'nanoid';
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { toast } from "@/hooks/use-toast";
-import { addDays, formatISO } from 'date-fns';
+import { addDays, formatISO, parseISO } from 'date-fns';
 
 interface InventoryContextType {
   products: Product[];
@@ -92,6 +92,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     const productionDate = new Date(batchData.productionDate);
     const expiryDate = addDays(productionDate, product.shelfLifeDays);
+    const batchCreatedAt = formatISO(new Date()); // Actual creation time for new batches
 
     const newBatch: Batch = {
       ...batchData,
@@ -100,7 +101,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       expiryDate: formatISO(expiryDate),
       productionDate: formatISO(productionDate), 
       currentQuantity: batchData.initialQuantity,
-      createdAt: formatISO(new Date()),
+      createdAt: batchCreatedAt,
     };
     setBatches(prev => [...prev, newBatch]);
 
@@ -111,7 +112,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       batchId: newBatch.id,
       type: 'IN',
       quantity: newBatch.initialQuantity,
-      timestamp: formatISO(new Date()),
+      timestamp: batchCreatedAt, // Transaction timestamp is when it's recorded
       unitCostAtTransaction: newBatch.unitCost,
       notes: `批次 ${newBatch.id} 的初始入库`,
     };
@@ -180,7 +181,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   };
   
   useEffect(() => {
-    // Initialize with sample data only if all relevant localStorage keys are empty
     const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh');
     const batchesExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_batches_zh');
     const transactionsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_transactions_zh');
@@ -195,68 +195,80 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       const createdProducts: Product[] = sampleProductsData.map(p => ({
         ...p,
         id: nanoid(),
-        createdAt: formatISO(new Date()),
+        createdAt: formatISO(addDays(new Date(), -180)), // Sample products created ~6 months ago
         isArchived: false,
       }));
       setProducts(createdProducts);
 
       const sampleBatchesData = [
-        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -30, expiryOffset: 335, initialQuantity: 10, currentQuantity: 8, unitCost: 15 },
-        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -60, expiryOffset: 305, initialQuantity: 5, currentQuantity: 5, unitCost: 14.5 },
-        { productId: createdProducts[1].id, productName: createdProducts[1].name, productionDateOffset: -2, expiryOffset: 5, initialQuantity: 20, currentQuantity: 15, unitCost: 1.2 },
+        // product 0, batch 1: created ~30 days ago
+        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 15 },
+        // product 0, batch 2: created ~60 days ago
+        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 14.5 },
+        // product 1, batch 1: created ~2 days ago
+        { productId: createdProducts[1].id, productName: createdProducts[1].name, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 1.2 },
+         // product 2, batch 1: created ~90 days ago
+        { productId: createdProducts[2].id, productName: createdProducts[2].name, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 8.0 },
+
       ];
 
-      const createdBatches: Batch[] = sampleBatchesData.map(b => {
-        const product = createdProducts.find(p => p.id === b.productId);
-        if (!product) throw new Error("Sample product not found for batch");
-        const productionDate = addDays(new Date(), b.productionDateOffset);
-        return {
-          id: nanoid(),
-          productId: b.productId,
-          productName: b.productName,
-          productionDate: formatISO(productionDate),
-          expiryDate: formatISO(addDays(productionDate, product.shelfLifeDays)), // Recalculate based on product's shelfLife
-          initialQuantity: b.initialQuantity,
-          currentQuantity: b.currentQuantity,
-          unitCost: b.unitCost,
-          createdAt: formatISO(new Date()),
-        };
-      });
-      setBatches(createdBatches);
-      
+      const createdBatches: Batch[] = [];
       const createdTransactions: Transaction[] = [];
-      createdBatches.forEach(b => {
+
+      sampleBatchesData.forEach(b_data => {
+        const product = createdProducts.find(p => p.id === b_data.productId);
+        if (!product) throw new Error("Sample product not found for batch");
+        
+        const productionDate = addDays(new Date(), b_data.productionDateOffset);
+        const batchCreatedAt = formatISO(productionDate); // Align createdAt with production for historical sample data
+
+        const newBatch: Batch = {
+          id: nanoid(),
+          productId: b_data.productId,
+          productName: b_data.productName,
+          productionDate: formatISO(productionDate),
+          expiryDate: formatISO(addDays(productionDate, product.shelfLifeDays)),
+          initialQuantity: b_data.initialQuantity,
+          currentQuantity: b_data.currentQuantity, // currentQuantity reflects subsequent transactions
+          unitCost: b_data.unitCost,
+          createdAt: batchCreatedAt, 
+        };
+        createdBatches.push(newBatch);
+
         createdTransactions.push({
           id: nanoid(),
-          productId: b.productId,
-          productName: b.productName,
-          batchId: b.id,
+          productId: newBatch.productId,
+          productName: newBatch.productName,
+          batchId: newBatch.id,
           type: 'IN' as TransactionType,
-          quantity: b.initialQuantity,
-          timestamp: b.createdAt,
-          unitCostAtTransaction: b.unitCost,
-          notes: '初始样本数据'
+          quantity: newBatch.initialQuantity,
+          timestamp: batchCreatedAt, // IN transaction at time of (sample) creation
+          unitCostAtTransaction: newBatch.unitCost,
+          notes: '初始样本数据 - 入库'
         });
-      });
 
-      // Example outflow transaction for the first batch of the first product
-      if (createdBatches.length > 0 && createdBatches[0].initialQuantity > 2) {
-         const firstBatch = createdBatches[0];
-         createdTransactions.push({
+        // If currentQuantity is less than initialQuantity, create an OUT transaction
+        if (b_data.currentQuantity < b_data.initialQuantity) {
+          const quantityOut = b_data.initialQuantity - b_data.currentQuantity;
+          createdTransactions.push({
             id: nanoid(),
-            productId: firstBatch.productId,
-            productName: firstBatch.productName,
-            batchId: firstBatch.id,
+            productId: newBatch.productId,
+            productName: newBatch.productName,
+            batchId: newBatch.id,
             type: 'OUT' as TransactionType,
-            quantity: 2, 
-            timestamp: formatISO(addDays(new Date(), -1)), // Yesterday
+            quantity: quantityOut,
+            // Make transaction date between batch creation and today for realism
+            timestamp: formatISO(addDays(productionDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
-            unitCostAtTransaction: firstBatch.unitCost,
-            notes: '示例销售'
-         });
-      }
+            unitCostAtTransaction: newBatch.unitCost,
+            notes: '初始样本数据 - 模拟出库'
+          });
+        }
+      });
+      
+      setBatches(createdBatches);
       setTransactions(createdTransactions);
-      console.log("Sample data initialized.");
+      console.log("Sample data initialized with historical batch createdAt dates.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
