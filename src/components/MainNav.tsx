@@ -10,8 +10,8 @@ import {
   Archive,
   PackageMinus,
   BarChart3,
-  Settings, 
-  Users, 
+  // Settings,
+  // Users,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -38,7 +38,7 @@ export function MainNav() {
   const { setOpenMobile } = useSidebar();
 
   const handleLinkClick = () => {
-    setOpenMobile(false); 
+    setOpenMobile(false);
   };
 
   return (
@@ -64,7 +64,7 @@ export function MainNav() {
         ))}
       </SidebarGroup>
 
-      {/* 
+      {/*
       <SidebarGroup>
         <SidebarGroupLabel>设置</SidebarGroupLabel>
         <SidebarMenuItem>
@@ -81,9 +81,8 @@ export function MainNav() {
             </SidebarMenuButton>
           </Link>
         </SidebarMenuItem>
-      </SidebarGroup> 
+      </SidebarGroup>
       */}
     </SidebarMenu>
   )
 }
-
