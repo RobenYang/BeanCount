@@ -10,7 +10,8 @@ import {
   Archive,
   PackageMinus,
   BarChart3,
-  Settings, // Added Settings icon
+  Settings,
+  History, // Added History icon
   // Users,
 } from "lucide-react"
 
@@ -35,6 +36,7 @@ const menuItems = [
 
 const settingsMenuItems = [
  { href: "/settings", label: "设置", icon: Settings },
+ { href: "/transactions", label: "交易记录", icon: History },
 ]
 
 export function MainNav() {
