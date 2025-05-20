@@ -4,14 +4,16 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, Package, Loader2 } from "lucide-react";
+import { AlertTriangle, PackageSearch, Warehouse, Package, Loader2, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
+import { subDays, parseISO, isWithinInterval, endOfDay } from "date-fns";
+import type { Transaction } from "@/lib/types";
 
 export default function DashboardPage() {
-  const { products, getProductStockDetails, archiveProduct } = useInventory();
+  const { products, getProductStockDetails, archiveProduct, transactions } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -75,11 +77,21 @@ export default function DashboardPage() {
 
   const activeProducts = products.filter(p => !p.isArchived);
 
-  const totalStockValue = activeProducts.reduce((totalValue, product) => {
-    const { batches } = getProductStockDetails(product.id);
-    const productValue = batches.reduce((sum, batch) => sum + (batch.currentQuantity * batch.unitCost), 0);
-    return totalValue + productValue;
+  const today = endOfDay(new Date());
+  const sevenDaysAgo = subDays(today, 7);
+
+  const last7DaysOutflowValue = transactions.reduce((totalValue, transaction) => {
+    if (
+      transaction.type === 'OUT' &&
+      !transaction.isCorrectionIncrease && // Exclude corrections that added stock back
+      transaction.unitCostAtTransaction !== undefined &&
+      isWithinInterval(parseISO(transaction.timestamp), { start: sevenDaysAgo, end: today })
+    ) {
+      return totalValue + (transaction.quantity * transaction.unitCostAtTransaction);
+    }
+    return totalValue;
   }, 0);
+
 
   const itemsNearingExpiry = activeProducts.flatMap(p => {
     const { batches } = getProductStockDetails(p.id);
@@ -112,12 +124,12 @@ export default function DashboardPage() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">总库存价值</CardTitle>
-            <span className="h-4 w-4 text-muted-foreground font-bold text-lg">¥</span>
+            <CardTitle className="text-sm font-medium">过去7天出库总价值</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">¥{totalStockValue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">当前库存估值</p>
+            <div className="text-2xl font-bold">¥{last7DaysOutflowValue.toFixed(2)}</div>
+            <p className="text-xs text-muted-foreground">过去7天出库产品价值总和</p>
           </CardContent>
         </Card>
         <Card>
