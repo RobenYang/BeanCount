@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil, Search as SearchIcon } from "lucide-react";
+import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil, Search as SearchIcon, Filter } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -28,6 +29,12 @@ function formatProductCategory(category: ProductCategory): string {
       return category;
   }
 }
+
+const productCategoryOptions: { value: ProductCategory | 'ALL'; label: string }[] = [
+    { value: "ALL", label: "所有类别" },
+    { value: "INGREDIENT", label: "食材" },
+    { value: "NON_INGREDIENT", label: "非食材" },
+];
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
   if (batches.length === 0) {
@@ -159,10 +166,11 @@ function ProductRow({
           </div>
           <div>
             <div className="font-medium">{product.name}</div>
-            <div className="text-xs text-muted-foreground">{formatProductCategory(product.category)}</div>
+            {/* Category removed from here */}
           </div>
         </div>
       </TableCell>
+      <TableCell>{formatProductCategory(product.category)}</TableCell>
       <TableCell>{product.unit}</TableCell>
       <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
       <TableCell className="text-right">{product.lowStockThreshold}</TableCell>
@@ -190,7 +198,7 @@ function ProductRow({
   
   const detailsRow = isExpanded ? (
     <TableRow key={`${product.id}-details`}>
-      <TableCell colSpan={9}>
+      <TableCell colSpan={10}> {/* Adjusted colSpan */}
         <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
       </TableCell>
     </TableRow>
@@ -218,16 +226,24 @@ export default function ProductsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
 
   const filteredProducts = useMemo(() => {
-    if (!searchTerm) {
-      return products; 
+    let tempProducts = products;
+
+    if (searchTerm) {
+      const lowercasedSearchTerm = searchTerm.toLowerCase();
+      tempProducts = tempProducts.filter(product =>
+        product.name.toLowerCase().includes(lowercasedSearchTerm)
+      );
     }
-    const lowercasedSearchTerm = searchTerm.toLowerCase();
-    return products.filter(product =>
-      product.name.toLowerCase().includes(lowercasedSearchTerm)
-    );
-  }, [products, searchTerm]);
+
+    if (categoryFilter !== 'ALL') {
+      tempProducts = tempProducts.filter(product => product.category === categoryFilter);
+    }
+    
+    return tempProducts;
+  }, [products, searchTerm, categoryFilter]);
 
   const productsToDisplayActive = useMemo(() => {
     return filteredProducts.filter(p => !p.isArchived);
@@ -248,6 +264,24 @@ export default function ProductsPage() {
     setProductToEdit(null);
     setIsEditModalOpen(false);
   };
+  
+  const getNoProductMessage = () => {
+    if (searchTerm && categoryFilter !== 'ALL') {
+      return `没有${activeTab === 'active' ? '活动' : '已归档'}产品匹配搜索词 “${searchTerm}” 和类别 “${formatProductCategory(categoryFilter as ProductCategory)}”。`;
+    }
+    if (searchTerm) {
+      return `没有${activeTab === 'active' ? '活动' : '已归档'}产品匹配搜索词 “${searchTerm}”。`;
+    }
+    if (categoryFilter !== 'ALL') {
+      return `没有${activeTab === 'active' ? '活动' : '已归档'}产品属于类别 “${formatProductCategory(categoryFilter as ProductCategory)}”。`;
+    }
+    return activeTab === 'active' ? '无活动产品' : '无已归档产品';
+  };
+
+  const getNoProductDescription = () => {
+    if (searchTerm || categoryFilter !== 'ALL') return "请尝试调整您的搜索或筛选条件。";
+    return activeTab === 'active' ? '添加一些产品开始吧！' : '您归档的产品将显示在此处。';
+  };
 
   return (
     <div className="space-y-6">
@@ -260,16 +294,35 @@ export default function ProductsPage() {
         </Button>
       </div>
 
-      <div className="relative">
-        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder="搜索产品名称..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full pl-10" 
-        />
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-grow">
+            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+            <Input
+            type="search"
+            placeholder="搜索产品名称..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10" 
+            />
+        </div>
+        <div className="w-full sm:w-auto sm:min-w-[180px]">
+            <Select
+                value={categoryFilter}
+                onValueChange={(value) => setCategoryFilter(value as ProductCategory | 'ALL')}
+            >
+                <SelectTrigger className="w-full">
+                    <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="按类别筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                    {productCategoryOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+        </div>
       </div>
+
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -284,6 +337,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                     <TableHead>名称</TableHead>
+                    <TableHead>类别</TableHead> {/* New Column */}
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
                     <TableHead className="text-right">预警阈值</TableHead>
@@ -304,23 +358,12 @@ export default function ProductsPage() {
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
                 <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                {searchTerm ? (
-                  <>
-                    <h3 className="text-xl font-semibold">未找到产品</h3>
-                    <p className="text-muted-foreground mb-4">
-                      没有活动产品匹配搜索词 “{searchTerm}”。
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="text-xl font-semibold">无活动产品</h3>
-                    <p className="text-muted-foreground mb-4">
-                      添加一些产品开始吧！
-                    </p>
+                <h3 className="text-xl font-semibold">{getNoProductMessage()}</h3>
+                <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>
+                {!(searchTerm || categoryFilter !== 'ALL') && activeTab === 'active' && (
                     <Button asChild>
-                      <Link href="/products/add">添加新产品</Link>
+                        <Link href="/products/add">添加新产品</Link>
                     </Button>
-                  </>
                 )}
               </CardContent>
             </Card>
@@ -334,6 +377,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                     <TableHead>名称</TableHead>
+                    <TableHead>类别</TableHead> {/* New Column */}
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
                     <TableHead className="text-right">预警阈值</TableHead>
@@ -354,21 +398,8 @@ export default function ProductsPage() {
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
                 <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                 {searchTerm ? (
-                  <>
-                    <h3 className="text-xl font-semibold">未找到产品</h3>
-                    <p className="text-muted-foreground mb-4">
-                      没有已归档产品匹配搜索词 “{searchTerm}”。
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="text-xl font-semibold">无已归档产品</h3>
-                    <p className="text-muted-foreground mb-4">
-                      您归档的产品将显示在此处。
-                    </p>
-                  </>
-                )}
+                <h3 className="text-xl font-semibold">{getNoProductMessage()}</h3>
+                <p className="text-muted-foreground mb-4">{getNoProductDescription()}</p>
               </CardContent>
             </Card>
           )}
@@ -382,5 +413,4 @@ export default function ProductsPage() {
     </div>
   );
 }
-
     
