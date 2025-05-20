@@ -8,6 +8,7 @@ import { nanoid } from 'nanoid';
 import { toast } from "@/hooks/use-toast";
 
 const LOCAL_STORAGE_USERS_KEY = 'inventory_users_auth_prototype';
+const LOCAL_STORAGE_CURRENT_USER_KEY = 'inventory_current_user_prototype'; // Specific key for current user session
 const SUPERADMIN_USERNAME = 'aomanyupianjian';
 const SUPERADMIN_PASSWORD = 'amypj2025'; // Plain text for prototype
 
@@ -59,20 +60,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUsers(initialUsers);
 
     // Check for persisted login (very basic, not secure for production)
-    const persistedUser = localStorage.getItem('currentUser');
-    if (persistedUser) {
+    const persistedUserMeta = localStorage.getItem(LOCAL_STORAGE_CURRENT_USER_KEY);
+    if (persistedUserMeta) {
       try {
-        const user = JSON.parse(persistedUser) as User;
-        // Re-validate against current user list for safety, though passwords aren't rechecked here
-        const validUser = initialUsers.find(u => u.id === user.id && u.username === user.username);
+        const userMeta = JSON.parse(persistedUserMeta) as Pick<User, 'id' | 'username' | 'isSuperAdmin'>;
+        // Re-validate against current user list for safety, and retrieve full user object
+        const validUser = initialUsers.find(u => u.id === userMeta.id && u.username === userMeta.username);
         if (validUser) {
-          setCurrentUser(validUser);
+          setCurrentUser(validUser); // Set the full user object from the users array
           setIsAuthenticated(true);
         } else {
-          localStorage.removeItem('currentUser');
+          localStorage.removeItem(LOCAL_STORAGE_CURRENT_USER_KEY);
         }
       } catch (e) {
-          localStorage.removeItem('currentUser');
+          localStorage.removeItem(LOCAL_STORAGE_CURRENT_USER_KEY);
       }
     }
     setIsLoading(false);
@@ -88,7 +89,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (userToLogin && userToLogin.password === passwordInput) { // Plain text password check
       setCurrentUser(userToLogin);
       setIsAuthenticated(true);
-      localStorage.setItem('currentUser', JSON.stringify(userToLogin)); // Persist for session
+      // Persist minimal user info for session, excluding password
+      const { password, ...userMetaToStore } = userToLogin;
+      localStorage.setItem(LOCAL_STORAGE_CURRENT_USER_KEY, JSON.stringify(userMetaToStore));
       toast({ title: "登录成功", description: `欢迎回来, ${userToLogin.username}!` });
       router.push('/');
     } else {
@@ -100,7 +103,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(() => {
     setCurrentUser(null);
     setIsAuthenticated(false);
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem(LOCAL_STORAGE_CURRENT_USER_KEY);
     toast({ title: "已登出", description: "您已成功登出。" });
     router.push('/login');
   }, [router]);
@@ -135,7 +138,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [users]);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, currentUser, users, isLoading, login, logout, addUser, deleteUser }}>
+    <AuthContext.Provider value={{ isAuthenticated, currentUser, users, isLoading, login, logout, addUser, deleteUser, toast }}>
       {children}
     </AuthContext.Provider>
   );
@@ -146,5 +149,10 @@ export const useAuth = () => {
   if (context === undefined) {
     throw new Error('useAuth 必须在 AuthProvider 中使用');
   }
-  return context;
+  // Add toast to the returned context if it's not already there
+  // This is to ensure components consuming useAuth() can also access toast
+  // without having to import useToast() separately, simplifying toast usage
+  // in components that already use useAuth.
+  return { ...context, toast };
 };
+
