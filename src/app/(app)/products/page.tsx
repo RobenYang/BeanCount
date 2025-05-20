@@ -11,7 +11,7 @@ import { PlusCircle, Archive, Edit, Undo, PackageSearch, Package, ChevronDown, C
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
-import Image from "next/image";
+import NextImage from "next/image"; // Renamed to avoid conflict with local Image component
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -48,7 +48,7 @@ function ProductBatchDetails({ batches, unit, productCategory }: { batches: Batc
           </TableRow>
         </TableHeader>
         <TableBody>
-          {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : 0)).map((batch) => {
+          {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime() : 0))).map((batch) => {
             let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
             let daysToExpiryText = "N/A";
 
@@ -100,9 +100,14 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
   const { totalQuantity, totalValue, batches } = getProductStockDetails(product.id);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  return (
-    <Fragment>
-      <TableRow>
+  if (!product) return null; // Should not happen if products are filtered correctly
+
+  const imageSrc = product.imageUrl || `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
+
+
+  const rowContent = (
+    <>
+      <TableRow key={product.id}>
         <TableCell>
           <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -110,8 +115,8 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-3">
-            <Image
-              src={`https://placehold.co/64x64.png?text=${product.name.substring(0,1)}`}
+            <NextImage
+              src={imageSrc}
               alt={product.name}
               width={40}
               height={40}
@@ -125,10 +130,10 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
           </div>
         </TableCell>
         <TableCell>{product.unit}</TableCell>
-        <TableCell>{product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
+        <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
         <TableCell className="text-right">{totalQuantity}</TableCell>
         <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
-        <TableCell>{format(parseISO(product.createdAt), "yyyy年MM月dd日")}</TableCell>
+        <TableCell>{format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm")}</TableCell>
         <TableCell className="text-right">
           {product.isArchived ? (
             <Button variant="ghost" size="sm" onClick={() => onUnarchive(product.id)} title="取消归档产品">
@@ -149,14 +154,17 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
         </TableCell>
       </TableRow>
       {isExpanded && (
-        <TableRow>
-          <TableCell colSpan={8}> {/* Adjusted colSpan to match number of columns */}
+        <TableRow key={`${product.id}-details`}>
+          <TableCell colSpan={8}> 
             <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} />
           </TableCell>
         </TableRow>
       )}
-    </Fragment>
+    </>
   );
+  
+  // If not using Fragment, return an array or single element
+  return isExpanded ? [rowContent.props.children[0], rowContent.props.children[1]] : rowContent.props.children[0];
 }
 
 export default function ProductsPage() {

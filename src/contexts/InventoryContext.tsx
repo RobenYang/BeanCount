@@ -62,6 +62,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       id: nanoid(),
       createdAt: formatISO(new Date()),
       isArchived: false,
+      imageUrl: productData.imageUrl || undefined, // Ensure imageUrl is handled
     };
     setProducts(prev => [...prev, newProduct]);
     toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
@@ -104,8 +105,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
       }
     } else { // NON_INGREDIENT
-      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : null; // Can still have a production date if provided
-      expiryDateIso = null; // Non-ingredients don't expire based on shelf life
+      productionDateIso = null; 
+      expiryDateIso = null; 
     }
 
 
@@ -197,20 +198,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh');
-    // Only initialize sample data if products don't exist, to preserve user data across sessions
     if (!productsExist) {
-      const sampleProductsData = [
-        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT' as ProductCategory, unit: 'kg', shelfLifeDays: 365 },
-        { name: '全脂牛奶', category: 'INGREDIENT' as ProductCategory, unit: '升', shelfLifeDays: 7 },
-        { name: '香草糖浆', category: 'INGREDIENT' as ProductCategory, unit: '瓶', shelfLifeDays: 730 },
-        { name: '马克杯', category: 'NON_INGREDIENT' as ProductCategory, unit: '个', shelfLifeDays: null },
+      const sampleProductsData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>[] = [
+        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, imageUrl: undefined },
+        { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, imageUrl: undefined },
+        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, imageUrl: undefined },
+        { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, imageUrl: undefined },
       ];
       
       const createdProducts: Product[] = sampleProductsData.map(p_data => ({
-        name: p_data.name,
-        category: p_data.category,
-        unit: p_data.unit,
-        shelfLifeDays: p_data.shelfLifeDays,
+        ...p_data,
         id: nanoid(),
         createdAt: formatISO(addDays(new Date(), -180)), 
         isArchived: false,
@@ -218,15 +215,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       setProducts(createdProducts);
 
       const sampleBatchesData = [
-        // Batches for Arabica Coffee Beans (INGREDIENT)
         { productId: createdProducts[0].id, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 150 },
         { productId: createdProducts[0].id, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 145 },
-        // Batches for Whole Milk (INGREDIENT)
         { productId: createdProducts[1].id, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 12 },
-        // Batches for Vanilla Syrup (INGREDIENT)
         { productId: createdProducts[2].id, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 80 },
-        // Batches for Mugs (NON_INGREDIENT)
-        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 },
+        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, // Mark 杯 - Non-ingredient
       ];
 
       const createdBatches: Batch[] = [];
@@ -247,8 +240,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           if (product.shelfLifeDays) {
             expiryDateIso = formatISO(addDays(intakeDate, product.shelfLifeDays));
           }
-        } else { // NON_INGREDIENT
-          productionDateIso = b_data.productionDateOffset ? formatISO(intakeDate) : null; 
+        } else { 
+          productionDateIso = null; 
           expiryDateIso = null;
         }
 
@@ -286,7 +279,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             productName: newBatch.productName,
             batchId: newBatch.id,
             type: 'OUT' as TransactionType,
-            quantity: quantityOut, // This is a positive number representing the amount that went out
+            quantity: quantityOut,
             timestamp: formatISO(addDays(intakeDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
             unitCostAtTransaction: newBatch.unitCost,
@@ -329,5 +322,3 @@ export const useInventory = () => {
   }
   return context;
 };
-
-    

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import Image from "next/image";
+import NextImage from "next/image"; // Renamed to avoid conflict
 import { Button } from "../ui/button";
 import { Archive, Edit, Package } from "lucide-react";
 import Link from "next/link";
@@ -32,6 +32,8 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
   const nearingExpiryThresholdDays = 7;
 
   const isIngredient = product.category === 'INGREDIENT';
+  const imageSrc = product.imageUrl || `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
+
 
   return (
     <Card className="flex flex-col h-full">
@@ -59,8 +61,8 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
         </div>
 
         <div className="flex items-center gap-2 pt-2">
-          <Image
-            src={`https://placehold.co/64x64.png?text=${product.name.substring(0,1)}`}
+          <NextImage
+            src={imageSrc}
             alt={product.name}
             width={48}
             height={48}
@@ -80,13 +82,15 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isIngredient && <TableHead className="text-xs">生产日期</TableHead>}
                   {isIngredient && <TableHead className="text-xs">过期日期</TableHead>}
+                  {!isIngredient && <TableHead className="text-xs">入库日期</TableHead>}
                   <TableHead className="text-xs text-right">数量</TableHead>
                   <TableHead className="text-xs text-right">成本/单位</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : 0)).map((batch) => {
+                {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime() : (a.createdAt && b.createdAt ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : 0 ))).map((batch) => {
                   let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
                   let daysToExpiryText = "";
 
@@ -104,11 +108,16 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
 
                   return (
                     <TableRow key={batch.id}>
+                       {isIngredient && (
+                        <TableCell className="py-1.5 text-xs">
+                          {batch.productionDate ? format(parseISO(batch.productionDate), "yy-MM-dd", { locale: zhCN }) : 'N/A'}
+                        </TableCell>
+                       )}
                       {isIngredient && (
-                        <TableCell className="py-1.5">
+                        <TableCell className="py-1.5 text-xs">
                           {batch.expiryDate ? (
-                            <Badge variant={expiryBadgeVariant} className="text-xs">
-                              {format(parseISO(batch.expiryDate), "yyyy年MM月dd日", { locale: zhCN })}
+                            <Badge variant={expiryBadgeVariant} className="text-xs whitespace-nowrap">
+                              {format(parseISO(batch.expiryDate), "yy-MM-dd", { locale: zhCN })}
                               {daysToExpiryText}
                             </Badge>
                           ) : (
@@ -116,6 +125,11 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                           )}
                         </TableCell>
                       )}
+                       {!isIngredient && (
+                        <TableCell className="py-1.5 text-xs">
+                          {format(parseISO(batch.createdAt), "yyyy-MM-dd", { locale: zhCN })}
+                        </TableCell>
+                       )}
                       <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
                       <TableCell className="py-1.5 text-right text-sm">¥{batch.unitCost.toFixed(2)}</TableCell>
                     </TableRow>
