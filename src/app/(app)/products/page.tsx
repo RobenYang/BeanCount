@@ -12,12 +12,13 @@ import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
-import { useState, Fragment, useMemo } from "react";
+import { useState, Fragment, useMemo, useEffect } from "react"; // Added useEffect
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton"; // Added Skeleton import
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -142,7 +143,7 @@ function ProductRow({
   };
 
   const mainRow = (
-    <TableRow key={product.id}>
+    <TableRow key={`${product.id}-main`}>
       <TableCell>
         <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -169,7 +170,6 @@ function ProductRow({
           </div>
           <div>
             <div className="font-medium">{product.name}</div>
-            {/* Category removed from here */}
           </div>
         </div>
       </TableCell>
@@ -201,7 +201,7 @@ function ProductRow({
   
   const detailsRow = isExpanded ? (
     <TableRow key={`${product.id}-details`}>
-      <TableCell colSpan={10}> {/* Adjusted colSpan */}
+      <TableCell colSpan={10}> 
         <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
       </TableCell>
     </TableRow>
@@ -225,13 +225,20 @@ function ProductRow({
 
 export default function ProductsPage() {
   const { products, archiveProduct, unarchiveProduct } = useInventory();
+  const [hasMounted, setHasMounted] = useState(false); // Added hasMounted state
   const [activeTab, setActiveTab] = useState("active");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
 
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+
   const filteredProducts = useMemo(() => {
+    if (!hasMounted) return []; // Return empty if not mounted
     let tempProducts = products;
 
     if (searchTerm) {
@@ -246,15 +253,17 @@ export default function ProductsPage() {
     }
     
     return tempProducts;
-  }, [products, searchTerm, categoryFilter]);
+  }, [products, searchTerm, categoryFilter, hasMounted]);
 
   const productsToDisplayActive = useMemo(() => {
+    if (!hasMounted) return [];
     return filteredProducts.filter(p => !p.isArchived);
-  }, [filteredProducts]);
+  }, [filteredProducts, hasMounted]);
 
   const productsToDisplayArchived = useMemo(() => {
+    if (!hasMounted) return [];
     return filteredProducts.filter(p => p.isArchived);
-  }, [filteredProducts]);
+  }, [filteredProducts, hasMounted]);
 
   const productsToDisplay = activeTab === "active" ? productsToDisplayActive : productsToDisplayArchived;
 
@@ -285,6 +294,71 @@ export default function ProductsPage() {
     if (searchTerm || categoryFilter !== 'ALL') return "请尝试调整您的搜索或筛选条件。";
     return activeTab === 'active' ? '添加一些产品开始吧！' : '您归档的产品将显示在此处。';
   };
+
+  if (!hasMounted) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold flex items-center gap-2"><Package className="h-8 w-8" /> 产品管理</h1>
+          <Skeleton className="h-10 w-[140px]" /> {/* Button placeholder */}
+        </div>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <Skeleton className="h-10 flex-grow" /> {/* Search input placeholder */}
+          <Skeleton className="h-10 w-full sm:w-[180px]" /> {/* Select placeholder */}
+        </div>
+        <Tabs value="active">
+          <TabsList>
+            <Skeleton className="h-9 w-24 mr-2 px-3 py-1.5" /> {/* Tab placeholder */}
+            <Skeleton className="h-9 w-28 px-3 py-1.5" /> {/* Tab placeholder */}
+          </TabsList>
+          <TabsContent value="active">
+            <Card>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead>名称</TableHead>
+                    <TableHead>类别</TableHead>
+                    <TableHead>单位</TableHead>
+                    <TableHead>保质期</TableHead>
+                    <TableHead className="text-right">预警阈值</TableHead>
+                    <TableHead className="text-right">库存数量</TableHead>
+                    <TableHead className="text-right">库存总价值</TableHead>
+                    <TableHead>创建日期</TableHead>
+                    <TableHead className="text-right w-[120px]">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...Array(3)].map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
+                      <TableCell><div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-10 inline-block" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-10 inline-block" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-5 w-20 inline-block" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-28" /></TableCell>
+                      <TableCell className="text-right space-x-1">
+                        <Skeleton className="h-8 w-8 inline-block rounded-md" />
+                        <Skeleton className="h-8 w-8 inline-block rounded-md" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          </TabsContent>
+        </Tabs>
+        <EditProductForm 
+          product={productToEdit}
+          isOpen={isEditModalOpen}
+          onClose={handleCloseEditModal}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -340,7 +414,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                     <TableHead>名称</TableHead>
-                    <TableHead>类别</TableHead> {/* New Column */}
+                    <TableHead>类别</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
                     <TableHead className="text-right">预警阈值</TableHead>
@@ -380,7 +454,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                     <TableHead>名称</TableHead>
-                    <TableHead>类别</TableHead> {/* New Column */}
+                    <TableHead>类别</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
                     <TableHead className="text-right">预警阈值</TableHead>
@@ -416,4 +490,6 @@ export default function ProductsPage() {
     </div>
   );
 }
+    
+
     
