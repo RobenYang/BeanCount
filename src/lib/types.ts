@@ -35,9 +35,8 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
   { value: 'SPOILAGE', label: '损耗' },
   { value: 'INTERNAL_USE', label: '内部使用' },
   { value: 'ADJUSTMENT_DECREASE', label: '库存调整 (减少)' },
-  // Note: ADJUSTMENT_INCREASE is not typically an "outflow" reason,
+  // Note: ADJUSTMENT_INCREASE is not typically an "outflow" reason for filtering AI summary,
   // but kept for structural consistency if needed elsewhere.
-  // For outflow forms, typically only decrease reasons are shown.
 ];
 
 
@@ -54,12 +53,7 @@ export interface Transaction {
   unitCostAtTransaction?: number; // To record cost at time of transaction
 }
 
-// For Stock Valuation Summary AI
-export interface StockValuationSummaryParams {
-  timeScale: string; // e.g., 'LAST_7_DAYS'
-  outflowReason: string; // e.g., 'SALE', 'ALL'
-}
-
+// For AI Stock Analysis Summary
 export const TIMESCALE_OPTIONS = [
   { value: 'LAST_7_DAYS', label: '过去7天' },
   { value: 'LAST_30_DAYS', label: '过去30天' },
@@ -68,17 +62,20 @@ export const TIMESCALE_OPTIONS = [
   { value: 'ALL_TIME', label: '全部时间' },
 ];
 
-// For Stock Valuation Chart View
-export const CHART_TIMESCALE_OPTIONS_TYPES = [
+// For Stock Analysis Chart View
+export const CHART_TIMESCALE_OPTIONS = [
   { value: 'LAST_7_DAYS_DAILY', label: '每日 (过去7天)' },
   { value: 'LAST_30_DAYS_DAILY', label: '每日 (过去30天)' },
   { value: 'LAST_3_MONTHS_WEEKLY', label: '每周 (过去3个月)' },
   { value: 'LAST_12_MONTHS_MONTHLY', label: '每月 (过去12个月)' },
-] as const; // Use "as const" for stricter type checking on values
+] as const;
 
-export type ChartTimeScaleValue = typeof CHART_TIMESCALE_OPTIONS_TYPES[number]['value'];
+export type ChartTimeScaleValue = typeof CHART_TIMESCALE_OPTIONS[number]['value'];
 
 export interface ChartDataPoint {
   date: string; // Formatted date string for X-axis
-  [key: string]: number | string; // Allows for dynamic data keys like 'productValue'
+  stockValue: number; // Stock value based on intake cost
+  quantity: number;   // Stock quantity
+  [key: string]: number | string; // Allows for dynamic data keys
 }
+

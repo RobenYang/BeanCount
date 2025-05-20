@@ -17,7 +17,7 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import { format, subDays, eachDayOfInterval, startOfWeek, startOfMonth, parseISO, endOfDay, isWithinInterval, addMonths, subMonths, subWeeks, addWeeks, getDaysInMonth } from "date-fns";
+import { format, subDays, eachDayOfInterval, startOfWeek, startOfMonth, parseISO, endOfDay, isWithinInterval, addMonths, subMonths, subWeeks, addWeeks, isAfter, isBefore } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 
 const CHART_TIMESCALE_OPTIONS = [
@@ -29,10 +29,11 @@ const CHART_TIMESCALE_OPTIONS = [
 
 interface ChartDataPoint {
   date: string; // Formatted date string for X-axis
-  productValue: number; // Stock value for Y-axis
+  stockValue: number; // Stock value for Y-axis (based on intake cost)
+  quantity: number; // Stock quantity for Y-axis
 }
 
-function calculateHistoricalStockValue(
+function calculateHistoricalStockData(
   productId: string,
   timeScale: string,
   allBatches: Batch[],
@@ -55,83 +56,70 @@ function calculateHistoricalStockValue(
     case 'LAST_3_MONTHS_WEEKLY':
       startDate = startOfWeek(subMonths(today, 3), { locale: zhCN });
       let currentDateW = startDate;
-      while (isWithinInterval(currentDateW, { start: subMonths(today,3), end: addWeeks(today,1)  })) { // ensure current week is included
-         if(isWithinInterval(currentDateW, { start: subMonths(today,3), end: today  })){
-            reportDates.push(endOfDay(currentDateW));
-         }
-        currentDateW = addWeeks(currentDateW, 1);
-         if (reportDates.length > 15) break; // Safety break
-      }
-      reportDates = reportDates.filter(date => !isBefore(date, startDate) && !isAfter(date, today));
-      if (reportDates.length === 0 && isWithinInterval(startOfWeek(today, {locale: zhCN}), { start: subMonths(today,3), end: today  })) {
-        reportDates.push(endOfDay(startOfWeek(today, {locale: zhCN}))); // Ensure at least one point if current week is in range
+      while (currentDateW <= today) {
+          reportDates.push(endOfDay(currentDateW));
+          currentDateW = addWeeks(currentDateW, 1);
+          if (reportDates.length > 15) break; 
       }
       break;
     case 'LAST_12_MONTHS_MONTHLY':
       startDate = startOfMonth(subMonths(today, 11));
-       let currentDateM = startDate;
-      while (isWithinInterval(currentDateM, { start: subMonths(today,11), end: addMonths(today,1) })) { // ensure current month is included
-        if(isWithinInterval(currentDateM, { start: subMonths(today,11), end: today })) {
-            reportDates.push(endOfDay(currentDateM));
-        }
-        currentDateM = addMonths(currentDateM, 1);
-        if (reportDates.length > 15) break; // Safety break
-      }
-      reportDates = reportDates.filter(date => !isBefore(date, startDate) && !isAfter(date, today));
-       if (reportDates.length === 0 && isWithinInterval(startOfMonth(today), { start: subMonths(today,11), end: today  })) {
-        reportDates.push(endOfDay(startOfMonth(today))); // Ensure at least one point if current month is in range
+      let currentDateM = startDate;
+      while (currentDateM <= today) {
+          reportDates.push(endOfDay(currentDateM));
+          currentDateM = addMonths(currentDateM, 1);
+          if (reportDates.length > 15) break;
       }
       break;
     default:
       return [];
   }
   
-  // Ensure reportDates are sorted and unique
   reportDates = Array.from(new Set(reportDates.map(d => d.toISOString()))).map(ds => parseISO(ds)).sort((a,b) => a.getTime() - b.getTime());
-
+  reportDates = reportDates.filter(date => date <= today); // Ensure no future dates
 
   return reportDates.map(reportDate => {
     let totalValueForDate = 0;
+    let totalQuantityForDate = 0;
+
     productBatches.forEach(batch => {
-      // Batch must exist at or before the report date
       if (isAfter(parseISO(batch.createdAt), reportDate)) {
         return;
       }
 
       let quantityInBatchAtReportDate = batch.initialQuantity;
-      const outflowsForBatch = allTransactions.filter(
+      const transactionsForBatchBeforeReportDate = allTransactions.filter(
         t => t.batchId === batch.id &&
-             t.type === 'OUT' &&
-             !isAfter(parseISO(t.timestamp), reportDate) // Transaction at or before reportDate
+             !isAfter(parseISO(t.timestamp), reportDate)
       );
 
-      const totalOutflowQuantity = outflowsForBatch.reduce((sum, t) => sum + t.quantity, 0);
-      quantityInBatchAtReportDate -= totalOutflowQuantity;
+      transactionsForBatchBeforeReportDate.forEach(t => {
+        if (t.type === 'OUT') {
+          quantityInBatchAtReportDate -= t.quantity;
+        }
+        // IN transactions are already accounted for by initialQuantity at batch creation time
+      });
+      
       quantityInBatchAtReportDate = Math.max(0, quantityInBatchAtReportDate);
       
-      totalValueForDate += quantityInBatchAtReportDate * batch.unitCost;
+      if (quantityInBatchAtReportDate > 0) {
+        totalValueForDate += quantityInBatchAtReportDate * batch.unitCost;
+        totalQuantityForDate += quantityInBatchAtReportDate;
+      }
     });
 
     let dateFormatString = "MM-dd";
-    if (timeScale === 'LAST_3_MONTHS_WEEKLY') dateFormatString = "yy/MM/dd"; // Representing week start
+    if (timeScale === 'LAST_3_MONTHS_WEEKLY') dateFormatString = "yy/MM/dd";
     if (timeScale === 'LAST_12_MONTHS_MONTHLY') dateFormatString = "yyyy-MM";
 
     return {
       date: format(reportDate, dateFormatString, { locale: zhCN }),
-      productValue: parseFloat(totalValueForDate.toFixed(2)),
+      stockValue: parseFloat(totalValueForDate.toFixed(2)),
+      quantity: totalQuantityForDate,
     };
   });
 }
 
-// Helper function to check if a date is after another date
-function isAfter(date1: Date, date2: Date): boolean {
-  return date1.getTime() > date2.getTime();
-}
-
-// Helper function to check if a date is before another date
-function isBefore(date1: Date, date2: Date): boolean {
-  return date1.getTime() < date2.getTime();
-}
 
 export function StockValuationChartView() {
   const { products, batches, transactions } = useInventory();
@@ -152,7 +140,7 @@ export function StockValuationChartView() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = calculateHistoricalStockValue(selectedProductId, selectedTimeScale, batches, transactions);
+      const data = calculateHistoricalStockData(selectedProductId, selectedTimeScale, batches, transactions);
       setChartData(data);
       if (data.length === 0) {
         setError("选择的时间范围内无数据或产品无库存记录。");
@@ -166,35 +154,42 @@ export function StockValuationChartView() {
     }
   };
   
-  // Automatically generate chart when product or timescale changes, if a product is selected
   useEffect(() => {
     if (selectedProductId) {
       handleGenerateChart();
     } else {
-      setChartData(null); // Clear chart if no product selected
+      setChartData(null);
+      setError("请选择一个产品以查看图表。");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProductId, selectedTimeScale, batches, transactions]); // Re-calculate if underlying data changes
+  }, [selectedProductId, selectedTimeScale, batches, transactions]);
 
 
   const chartConfig = {
-    productValue: {
+    stockValue: {
       label: "库存价值 ($)",
-      color: "hsl(var(--primary))",
+      color: "hsl(var(--chart-1))",
+    },
+    quantity: {
+      label: "库存数量",
+      color: "hsl(var(--chart-2))",
     },
   } satisfies ChartConfig;
   
-  const selectedProductName = activeProducts.find(p => p.id === selectedProductId)?.name || "";
+  const selectedProduct = activeProducts.find(p => p.id === selectedProductId);
+  const selectedProductName = selectedProduct?.name || "";
+  const selectedProductUnit = selectedProduct?.unit || "";
+
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <LineChartIcon className="h-6 w-6" />
-          库存价值图表分析
+          库存变化图表
         </CardTitle>
         <CardDescription>
-          选择产品和时间范围以可视化库存价值随时间的变化。
+          选择产品和时间范围以可视化其库存价值（基于入库成本）和数量随时间的变化。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -250,36 +245,70 @@ export function StockValuationChartView() {
         )}
 
         {!isLoading && !error && chartData && chartData.length > 0 && (
-          <div className="h-72 w-full">
-            <ChartContainer config={chartConfig} className="min-h-[200px] w-full">
+          <div className="h-[450px] w-full"> {/* Increased height for two Y-axes */}
+            <ChartContainer config={chartConfig} className="min-h-[200px] w-full h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
                   data={chartData}
-                  margin={{ top: 5, right: 20, left: -20, bottom: 5 }} // Adjusted left margin
+                  margin={{ top: 5, right: 30, left: 0, bottom: 5 }} 
                 >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={8} />
                   <YAxis 
-                    dataKey="productValue" 
+                    yAxisId="left"
+                    dataKey="stockValue" 
                     tickLine={false} 
                     axisLine={false} 
                     tickMargin={8} 
                     tickFormatter={(value) => `$${value}`} 
                     domain={['auto', 'auto']}
+                    stroke="hsl(var(--chart-1))"
+                  />
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    dataKey="quantity"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => `${value} ${selectedProductUnit}`}
+                    domain={['auto', 'auto']}
+                    stroke="hsl(var(--chart-2))"
                   />
                   <ChartTooltip
-                    cursor={false}
-                    content={<ChartTooltipContent hideLabel />}
+                    cursor={true}
+                    content={<ChartTooltipContent 
+                                hideLabel 
+                                formatter={(value, name, props) => {
+                                  if (name === 'stockValue') {
+                                    return [`$${(value as number).toFixed(2)}`, chartConfig.stockValue.label];
+                                  }
+                                  if (name === 'quantity') {
+                                    return [`${value} ${selectedProductUnit}`, chartConfig.quantity.label];
+                                  }
+                                  return [value, name];
+                                }}
+                            />}
                   />
                   <Line
-                    dataKey="productValue"
+                    yAxisId="left"
+                    dataKey="stockValue"
                     type="monotone"
-                    stroke={`hsl(var(--primary))`} // Using primary color from theme
+                    stroke={`hsl(var(--chart-1))`}
                     strokeWidth={2}
-                    dot={false}
+                    dot={true}
                     name={selectedProductName ? `${selectedProductName} 库存价值` : "库存价值"}
                   />
-                   <Legend content={<ChartLegendContent />} />
+                   <Line
+                    yAxisId="right"
+                    dataKey="quantity"
+                    type="monotone"
+                    stroke={`hsl(var(--chart-2))`}
+                    strokeWidth={2}
+                    dot={true}
+                    name={selectedProductName ? `${selectedProductName} 库存数量` : "库存数量"}
+                  />
+                  <Legend content={<ChartLegendContent />} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -296,4 +325,3 @@ export function StockValuationChartView() {
     </Card>
   );
 }
-

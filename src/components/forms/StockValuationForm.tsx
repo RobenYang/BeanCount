@@ -15,13 +15,15 @@ import {
 } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { stockValuationSummary, type StockValuationSummaryInput, type StockValuationSummaryOutput } from "@/ai/flows/stock-valuation-summary";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { BarChart3, Loader2 } from "lucide-react";
-import { OUTFLOW_REASONS_WITH_LABELS, TIMESCALE_OPTIONS, type OutflowReasonItem } from "@/lib/types";
+import { Bot, Loader2 } from "lucide-react";
+import { OUTFLOW_REASONS_WITH_LABELS, TIMESCALE_OPTIONS } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useInventory } from "@/contexts/InventoryContext";
 
 const stockValuationFormSchema = z.object({
+  productId: z.string().min(1, "必须选择产品。"),
   timeScale: z.string().min(1, "必须选择时间范围。"),
   outflowReason: z.string().min(1, "必须选择出库原因。"),
 });
@@ -29,6 +31,9 @@ const stockValuationFormSchema = z.object({
 type StockValuationFormValues = z.infer<typeof stockValuationFormSchema>;
 
 export function StockValuationForm() {
+  const { products } = useInventory();
+  const activeProducts = useMemo(() => products.filter(p => !p.isArchived), [products]);
+
   const [summary, setSummary] = useState<StockValuationSummaryOutput | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,25 +41,33 @@ export function StockValuationForm() {
   const form = useForm<StockValuationFormValues>({
     resolver: zodResolver(stockValuationFormSchema),
     defaultValues: {
+      productId: activeProducts.length > 0 ? activeProducts[0].id : "",
       timeScale: TIMESCALE_OPTIONS[0].value,
-      outflowReason: "ALL", // Default to "All Reasons"
+      outflowReason: "ALL", 
     },
   });
+   // Effect to update default productId if activeProducts change and current selection is invalid or not set
+  useState(() => {
+    if (activeProducts.length > 0 && (!form.getValues("productId") || !activeProducts.find(p => p.id === form.getValues("productId")))) {
+      form.setValue("productId", activeProducts[0].id);
+    }
+  });
+
 
   async function onSubmit(data: StockValuationFormValues) {
     setIsLoading(true);
     setError(null);
     setSummary(null);
     try {
-      // The AI flow expects English enum-like values for outflowReason
       const inputForAI: StockValuationSummaryInput = {
+        productId: data.productId,
         timeScale: data.timeScale,
-        outflowReason: data.outflowReason, // This is already the 'value' field like 'SALE' or 'ALL'
+        outflowReason: data.outflowReason,
       };
       const result = await stockValuationSummary(inputForAI);
       setSummary(result);
     } catch (e) {
-      console.error("生成库存估值摘要时出错:", e);
+      console.error("生成AI库存分析摘要时出错:", e);
       setError("生成摘要失败。请重试。");
     } finally {
       setIsLoading(false);
@@ -66,16 +79,40 @@ export function StockValuationForm() {
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BarChart3 className="h-6 w-6" />
-            库存估值摘要
+            <Bot className="h-6 w-6" />
+            AI 库存分析摘要
           </CardTitle>
           <CardDescription>
-            根据所选筛选条件生成AI驱动的库存估值摘要。
+            选择产品、时间范围和出库原因，生成AI驱动的库存变化分析摘要。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="productId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>产品</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value} disabled={activeProducts.length === 0}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="选择一个产品" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {activeProducts.length > 0 ? activeProducts.map((product) => (
+                          <SelectItem key={product.id} value={product.id}>
+                            {product.name}
+                          </SelectItem>
+                        )) : <SelectItem value="no-product" disabled>无可用产品</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="timeScale"
@@ -106,7 +143,7 @@ export function StockValuationForm() {
                 name="outflowReason"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>出库原因</FormLabel>
+                    <FormLabel>出库原因 (筛选)</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -115,7 +152,7 @@ export function StockValuationForm() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="ALL">所有原因</SelectItem>
-                        {OUTFLOW_REASONS_WITH_LABELS.map((reason) => (
+                        {OUTFLOW_REASONS_WITH_LABELS.filter(r => r.value !== 'ADJUSTMENT_INCREASE').map((reason) => (
                           <SelectItem key={reason.value} value={reason.value}>
                             {reason.label}
                           </SelectItem>
@@ -126,11 +163,11 @@ export function StockValuationForm() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || activeProducts.length === 0}>
                 {isLoading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
-                  <BarChart3 className="mr-2 h-4 w-4" />
+                  <Bot className="mr-2 h-4 w-4" />
                 )}
                 生成摘要
               </Button>
@@ -162,7 +199,7 @@ export function StockValuationForm() {
       {summary && (
         <Card className="max-w-2xl mx-auto mt-6">
           <CardHeader>
-            <CardTitle>估值摘要结果</CardTitle>
+            <CardTitle>AI 分析摘要结果</CardTitle>
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-48">
@@ -174,3 +211,4 @@ export function StockValuationForm() {
     </div>
   );
 }
+

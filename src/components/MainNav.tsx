@@ -30,7 +30,7 @@ const menuItems = [
   { href: "/products/add", label: "添加产品", icon: PlusCircle },
   { href: "/stock/intake", label: "库存入库", icon: Archive },
   { href: "/stock/outflow", label: "库存出库", icon: PackageMinus },
-  { href: "/stock/valuation", label: "库存估值", icon: BarChart3 },
+  { href: "/stock/valuation", label: "库存统计", icon: BarChart3 },
 ]
 
 export function MainNav() {
@@ -86,3 +86,4 @@ export function MainNav() {
     </SidebarMenu>
   )
 }
+
