@@ -27,8 +27,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 const stockIntakeFormSchema = z.object({
   productId: z.string().min(1, "必须选择产品。"),
   productionDate: z.date({ required_error: "生产日期为必填项。" }),
-  initialQuantity: z.coerce.number().positive("数量必须是正数。"),
-  unitCost: z.coerce.number().min(0, "单位成本不能为负且为必填项。"), // Made more explicit
+  initialQuantity: z.coerce.number().gt(0, { message: "接收数量必须大于0。" }),
+  unitCost: z.coerce.number().min(0, "单位成本不能为负且为必填项。"),
 });
 
 type StockIntakeFormValues = z.infer<typeof stockIntakeFormSchema>;
@@ -41,14 +41,14 @@ export function StockIntakeForm() {
     resolver: zodResolver(stockIntakeFormSchema),
     defaultValues: {
       productId: "",
-      initialQuantity: 0,
-      unitCost: undefined, // Default to undefined to ensure validation triggers if not filled
+      initialQuantity: undefined, // Start with undefined, so placeholder shows and validation triggers on first interaction
+      unitCost: undefined,
     },
   });
 
   function onSubmit(data: StockIntakeFormValues) {
     const { productId, productionDate, initialQuantity, unitCost } = data;
-     if (unitCost === undefined || unitCost < 0) { // Explicit check, though Zod should catch it
+     if (unitCost === undefined || unitCost < 0) {
       form.setError("unitCost", { type: "manual", message: "单位成本为必填项且不能为负。" });
       return;
     }
@@ -58,9 +58,9 @@ export function StockIntakeForm() {
       initialQuantity, 
       unitCost 
     });
-    form.reset({ // Reset with specific undefined for date to clear calendar
+    form.reset({ 
         productId: "",
-        initialQuantity: 0,
+        initialQuantity: undefined,
         unitCost: undefined,
         productionDate: undefined as any 
     });
@@ -152,7 +152,7 @@ export function StockIntakeForm() {
                 <FormItem>
                   <FormLabel>接收数量</FormLabel>
                   <FormControl>
-                    <Input type="number" placeholder="例如: 10" {...field} />
+                    <Input type="number" placeholder="例如: 10" {...field} onChange={e => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -166,7 +166,7 @@ export function StockIntakeForm() {
                 <FormItem>
                   <FormLabel>单位成本 (¥)</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" placeholder="例如: 15.50" {...field} />
+                    <Input type="number" step="0.01" placeholder="例如: 15.50" {...field} onChange={e => field.onChange(e.target.value === '' ? undefined : parseFloat(e.target.value))} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
