@@ -3,9 +3,9 @@
 
 import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory, AppSettings } from '@/lib/types';
 import { nanoid } from 'nanoid';
-import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react'; // Added useCallback
+import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { toast } from "@/hooks/use-toast";
-import { addDays, formatISO, parseISO } from 'date-fns';
+import { addDays, formatISO, parseISO, subWeeks, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval } from 'date-fns'; // Added date-fns functions
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   expiryWarningDays: 7,
@@ -77,6 +77,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       createdAt: formatISO(new Date()),
       isArchived: false,
       imageUrl: productData.imageUrl || undefined,
+      lowStockThreshold: productData.lowStockThreshold,
     };
     setProducts(prev => [...prev, newProduct]);
     toast({ title: "成功", description: `产品 "${newProduct.name}" 已添加。` });
@@ -116,7 +117,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const getMostRecentUnitCost = useCallback((productId: string): number | undefined => {
     const productBatches = batches
       .filter(b => b.productId === productId)
-      .sort((a, b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()); // Sort by creation date, newest first
+      .sort((a, b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime());
     return productBatches.length > 0 ? productBatches[0].unitCost : undefined;
   }, [batches]);
 
@@ -193,15 +194,15 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const batchIndex = batches.findIndex(b => b.id === batchId && b.productId === productId);
-    if (batchIndex === -1 && quantityToOutflow > 0) { // Allow correction for non-existent batch IF quantity is negative
+    if (batchIndex === -1 && quantityToOutflow > 0) {
       toast({ title: "错误", description: "未找到指定的批次。", variant: "destructive" });
       return;
     }
     
-    const batch = batches[batchIndex]; // Can be undefined if quantityToOutflow < 0 and batchId is for a non-existent/empty batch
-
+    const batch = batches[batchIndex]; 
+    
     if (quantityToOutflow > 0) {
-      if (!batch) { // Should have been caught above, but as a safeguard
+      if (!batch) { 
          toast({ title: "错误", description: "未找到指定的批次进行出库。", variant: "destructive" });
          return;
       }
@@ -212,23 +213,35 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
     
     const updatedBatches = [...batches];
-    if (batch) { // If batch exists, update its quantity
+    let actualUnitCostAtTransaction = batch ? batch.unitCost : undefined;
+
+    if (batch) { 
         updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
+    } else if (quantityToOutflow < 0) { // Correction increase for a potentially depleted/non-existent batch id
+        // Try to find *any* batch of this product to get a unit cost, or last transaction cost
+        const productBatches = batches.filter(b => b.productId === productId).sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime());
+        if (productBatches.length > 0) {
+            actualUnitCostAtTransaction = productBatches[0].unitCost;
+        } else {
+            const lastProductTransaction = transactions.filter(t => t.productId === productId && t.unitCostAtTransaction !== undefined).sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime());
+            if (lastProductTransaction.length > 0) {
+                 actualUnitCostAtTransaction = lastProductTransaction[0].unitCostAtTransaction;
+            }
+        }
+        // If still no cost, it will be undefined. This situation is less ideal for value tracking.
     }
-    // If batch doesn't exist (only possible if quantityToOutflow < 0), we still record transaction but don't update batches.
-    // This scenario needs careful consideration if it's a valid business case. For now, it proceeds.
     
     const newTransaction: Transaction = {
       id: nanoid(),
       productId: product.id,
       productName: product.name,
-      batchId: batchId, // record the intended batchId even if it was problematic for correction
+      batchId: batchId, 
       type: 'OUT',
       quantity: Math.abs(quantityToOutflow),
       timestamp: formatISO(new Date()),
       reason,
       notes,
-      unitCostAtTransaction: batch ? batch.unitCost : undefined, // Cost might be unknown if correcting a non-existent batch
+      unitCostAtTransaction: actualUnitCostAtTransaction,
       isCorrectionIncrease: quantityToOutflow < 0 ? true : undefined,
     };
 
@@ -240,7 +253,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } else {
       toast({ title: "成功", description: `从批次 ${batchId} 中为 "${product.name}" 出库 ${quantityToOutflow} ${product.unit} 已记录。` });
     }
-  }, [batches, getProductById, setBatches, setTransactions]);
+  }, [batches, getProductById, setBatches, setTransactions, transactions]);
 
 
   const getBatchesByProductId = useCallback((productId: string) => {
@@ -257,98 +270,142 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh_v2');
     if (!productsExist) {
+      console.log("Initializing sample data v2.1 for inventory analysis...");
       const sampleProductsData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>[] = [
-        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 5, imageUrl: 'https://placehold.co/300x300.png' },
-        { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, lowStockThreshold: 10, imageUrl: undefined },
-        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, lowStockThreshold: 3, imageUrl: 'https://placehold.co/400x300.png' },
-        { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, lowStockThreshold: 12, imageUrl: undefined },
+        { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 2, imageUrl: 'https://placehold.co/300x300.png?text=豆', },
+        { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, lowStockThreshold: 3, imageUrl: 'https://placehold.co/300x300.png?text=奶' },
+        { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, lowStockThreshold: 1, imageUrl: 'https://placehold.co/300x300.png?text=浆' },
+        { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, lowStockThreshold: 5, imageUrl: 'https://placehold.co/300x300.png?text=杯' },
       ];
       
-      const createdProducts: Product[] = sampleProductsData.map(p_data => ({
+      const createdProducts: Product[] = sampleProductsData.map((p_data, index) => ({
         ...p_data,
-        id: nanoid(),
+        id: `sample_prod_${index + 1}`,
         createdAt: formatISO(addDays(new Date(), -180)), 
         isArchived: false,
       }));
       setProducts(createdProducts);
 
-      const sampleBatchesData = [
-        { productId: createdProducts[0].id, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 150 },
-        { productId: createdProducts[0].id, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 145 },
-        { productId: createdProducts[1].id, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 12 },
-        { productId: createdProducts[2].id, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 80 },
-        { productId: createdProducts[3].id, productionDateOffset: -120, initialQuantity: 50, currentQuantity: 45, unitCost: 25 }, 
-      ];
+      let tempBatches: Batch[] = [];
+      let tempTransactions: Transaction[] = [];
+      
+      const today = new Date();
+      const startOfThisWeek = startOfWeek(today, { weekStartsOn: 1 });
+      const startOfLastWeek = subWeeks(startOfThisWeek, 1);
+      const endOfLastWeek = endOfWeek(startOfLastWeek, { weekStartsOn: 1 });
+      const daysInLastWeek = eachDayOfInterval({ start: startOfLastWeek, end: endOfLastWeek });
 
-      const createdBatches: Batch[] = [];
-      const createdTransactions: Transaction[] = [];
+      // Sample Batches (Initial Stock before last week's consumption)
+      // Product 1: 阿拉比卡咖啡豆 (Coffee Beans) - Moderate Stock, Moderate Consumption
+      const coffeeProdDate = addDays(today, -60);
+      const coffeeBatch: Batch = {
+        id: 'sample_batch_coffee_1', productId: createdProducts[0].id, productName: createdProducts[0].name,
+        productionDate: formatISO(coffeeProdDate), expiryDate: formatISO(addDays(coffeeProdDate, createdProducts[0].shelfLifeDays!)),
+        initialQuantity: 10, currentQuantity: 10, unitCost: 150, createdAt: formatISO(coffeeProdDate)
+      };
+      tempBatches.push(coffeeBatch);
+      tempTransactions.push({
+        id: nanoid(), productId: coffeeBatch.productId, productName: coffeeBatch.productName, batchId: coffeeBatch.id, type: 'IN',
+        quantity: coffeeBatch.initialQuantity, timestamp: coffeeBatch.createdAt, unitCostAtTransaction: coffeeBatch.unitCost, notes: '初始样本数据 - 入库'
+      });
 
-      sampleBatchesData.forEach(b_data => {
-        const product = createdProducts.find(p => p.id === b_data.productId);
-        if (!product) return; 
-        
-        const intakeDate = addDays(new Date(), b_data.productionDateOffset); 
-        const batchCreatedAt = formatISO(intakeDate); 
-
-        let productionDateIso: string | null = null;
-        let expiryDateIso: string | null = null;
-
-        if (product.category === 'INGREDIENT') {
-          productionDateIso = formatISO(intakeDate); 
-          if (product.shelfLifeDays) {
-            expiryDateIso = formatISO(addDays(intakeDate, product.shelfLifeDays));
-          }
-        } else { 
-          productionDateIso = formatISO(intakeDate); 
-          expiryDateIso = null;
-        }
-
-        const newBatch: Batch = {
-          id: nanoid(),
-          productId: b_data.productId,
-          productName: product.name,
-          productionDate: productionDateIso,
-          expiryDate: expiryDateIso,
-          initialQuantity: b_data.initialQuantity,
-          currentQuantity: b_data.currentQuantity, 
-          unitCost: b_data.unitCost,
-          createdAt: batchCreatedAt, 
-        };
-        createdBatches.push(newBatch);
-
-        createdTransactions.push({
-          id: nanoid(),
-          productId: newBatch.productId,
-          productName: newBatch.productName,
-          batchId: newBatch.id,
-          type: 'IN' as TransactionType,
-          quantity: newBatch.initialQuantity,
-          timestamp: batchCreatedAt, 
-          unitCostAtTransaction: newBatch.unitCost,
-          notes: '初始样本数据 - 入库'
-        });
-
-        if (b_data.currentQuantity < b_data.initialQuantity) {
-          const quantityOut = b_data.initialQuantity - b_data.currentQuantity;
-          createdTransactions.push({
-            id: nanoid(),
-            productId: newBatch.productId,
-            productName: newBatch.productName,
-            batchId: newBatch.id,
-            type: 'OUT' as TransactionType,
-            quantity: quantityOut,
-            timestamp: formatISO(addDays(intakeDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
-            reason: 'SALE' as OutflowReasonValue,
-            unitCostAtTransaction: newBatch.unitCost,
-            notes: '初始样本数据 - 模拟出库',
-            isCorrectionIncrease: false,
-          });
-        }
+      // Product 2: 全脂牛奶 (Milk) - Low Stock, High Consumption (should deplete soonest)
+      const milkProdDate = addDays(today, -10); // More recent production
+      const milkBatch: Batch = {
+        id: 'sample_batch_milk_1', productId: createdProducts[1].id, productName: createdProducts[1].name,
+        productionDate: formatISO(milkProdDate), expiryDate: formatISO(addDays(milkProdDate, createdProducts[1].shelfLifeDays!)),
+        initialQuantity: 5, currentQuantity: 5, unitCost: 12, createdAt: formatISO(milkProdDate)
+      };
+      tempBatches.push(milkBatch);
+      tempTransactions.push({
+        id: nanoid(), productId: milkBatch.productId, productName: milkBatch.productName, batchId: milkBatch.id, type: 'IN',
+        quantity: milkBatch.initialQuantity, timestamp: milkBatch.createdAt, unitCostAtTransaction: milkBatch.unitCost, notes: '初始样本数据 - 入库'
       });
       
-      setBatches(createdBatches);
-      setTransactions(createdTransactions);
-      console.log("Sample data v2 initialized with product-specific low stock thresholds and some image URLs.");
+      // Product 3: 香草糖浆 (Syrup) - High Stock, Low Consumption
+      const syrupProdDate = addDays(today, -90);
+      const syrupBatch: Batch = {
+        id: 'sample_batch_syrup_1', productId: createdProducts[2].id, productName: createdProducts[2].name,
+        productionDate: formatISO(syrupProdDate), expiryDate: formatISO(addDays(syrupProdDate, createdProducts[2].shelfLifeDays!)),
+        initialQuantity: 20, currentQuantity: 20, unitCost: 80, createdAt: formatISO(syrupProdDate)
+      };
+      tempBatches.push(syrupBatch);
+      tempTransactions.push({
+        id: nanoid(), productId: syrupBatch.productId, productName: syrupBatch.productName, batchId: syrupBatch.id, type: 'IN',
+        quantity: syrupBatch.initialQuantity, timestamp: syrupBatch.createdAt, unitCostAtTransaction: syrupBatch.unitCost, notes: '初始样本数据 - 入库'
+      });
+
+      // Product 4: 马克杯 (Mug) - Non-ingredient, some consumption
+      const mugProdDate = addDays(today, -120);
+      const mugBatch: Batch = {
+        id: 'sample_batch_mug_1', productId: createdProducts[3].id, productName: createdProducts[3].name,
+        productionDate: formatISO(mugProdDate), expiryDate: null,
+        initialQuantity: 30, currentQuantity: 30, unitCost: 25, createdAt: formatISO(mugProdDate)
+      };
+      tempBatches.push(mugBatch);
+      tempTransactions.push({
+        id: nanoid(), productId: mugBatch.productId, productName: mugBatch.productName, batchId: mugBatch.id, type: 'IN',
+        quantity: mugBatch.initialQuantity, timestamp: mugBatch.createdAt, unitCostAtTransaction: mugBatch.unitCost, notes: '初始样本数据 - 入库'
+      });
+
+
+      // Simulate 'OUT' transactions for *last week*
+      // Milk: High consumption (e.g., 0.5L per day for 5 days last week)
+      for (let i = 0; i < 5; i++) { // 5 days of consumption
+        if (milkBatch.currentQuantity >= 0.5) {
+          const transactionDate = formatISO(daysInLastWeek[i]);
+          tempTransactions.push({
+            id: nanoid(), productId: milkBatch.productId, productName: milkBatch.productName, batchId: milkBatch.id, type: 'OUT',
+            quantity: 0.5, timestamp: transactionDate, unitCostAtTransaction: milkBatch.unitCost, reason: 'SALE', notes: '样本销售'
+          });
+          milkBatch.currentQuantity -= 0.5;
+        }
+      }
+      
+      // Coffee: Moderate consumption (e.g., 0.2kg per day for 3 days last week)
+      for (let i = 0; i < 3; i++) {
+        if (coffeeBatch.currentQuantity >= 0.2) {
+          const transactionDate = formatISO(daysInLastWeek[i]);
+           tempTransactions.push({
+            id: nanoid(), productId: coffeeBatch.productId, productName: coffeeBatch.productName, batchId: coffeeBatch.id, type: 'OUT',
+            quantity: 0.2, timestamp: transactionDate, unitCostAtTransaction: coffeeBatch.unitCost, reason: 'SALE', notes: '样本销售'
+          });
+          coffeeBatch.currentQuantity -= 0.2;
+        }
+      }
+      
+      // Syrup: Low consumption (e.g., 1 bottle total last week)
+      if (syrupBatch.currentQuantity >= 1) {
+        const transactionDate = formatISO(daysInLastWeek[2]); // One day last week
+        tempTransactions.push({
+            id: nanoid(), productId: syrupBatch.productId, productName: syrupBatch.productName, batchId: syrupBatch.id, type: 'OUT',
+            quantity: 1, timestamp: transactionDate, unitCostAtTransaction: syrupBatch.unitCost, reason: 'SALE', notes: '样本销售'
+        });
+        syrupBatch.currentQuantity -= 1;
+      }
+
+      // Mug: Some consumption (e.g., 2 mugs total last week)
+      if (mugBatch.currentQuantity >= 2) {
+        const transactionDate = formatISO(daysInLastWeek[3]);
+        tempTransactions.push({
+            id: nanoid(), productId: mugBatch.productId, productName: mugBatch.productName, batchId: mugBatch.id, type: 'OUT',
+            quantity: 2, timestamp: transactionDate, unitCostAtTransaction: mugBatch.unitCost, reason: 'SALE', notes: '样本销售'
+        });
+        mugBatch.currentQuantity -= 2;
+      }
+
+      // Update batch currentQuantities based on simulated outflows
+      const finalBatches = tempBatches.map(b => {
+          if (b.id === coffeeBatch.id) return coffeeBatch;
+          if (b.id === milkBatch.id) return milkBatch;
+          if (b.id === syrupBatch.id) return syrupBatch;
+          if (b.id === mugBatch.id) return mugBatch;
+          return b;
+      });
+      
+      setBatches(finalBatches);
+      setTransactions(tempTransactions);
+      console.log("Sample data v2.1 initialized with targeted 'last week' consumptions.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -384,7 +441,3 @@ export const useInventory = () => {
   }
   return context;
 };
-
-    
-
-    
