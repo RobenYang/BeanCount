@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { Product, Batch, Transaction } from "@/lib/types";
 import { Button } from "@/components/ui/button";
