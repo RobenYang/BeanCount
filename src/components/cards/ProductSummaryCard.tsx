@@ -50,7 +50,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
         <CardHeader className="pb-2">
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-xl flex items-center gap-2">
+              <CardTitle className="text-lg flex items-center gap-2"> {/* Changed text-xl to text-lg */}
                 <Package className="h-5 w-5 text-primary" />
                 {product.name}
               </CardTitle>
@@ -90,13 +90,8 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           </div>
 
         </CardHeader>
-        {/* CardContent is removed as batch table is no longer displayed here */}
-        {/* If CardContent had other elements, they would remain. Now it is empty and can be omitted or kept minimal. */}
-        <CardContent className="pt-0 pb-2 flex-grow">
-           {/* This content area is now minimal as batch details are removed */}
-           {/* You could add other summary info here if needed, or remove CardContent if truly empty */}
-           {/* Forcing a minimal height for consistency if there are no badges, can be adjusted */}
-           <div className="min-h-[1rem]"></div>
+        <CardContent className="pt-0 pb-2"> {/* Removed flex-grow and the inner div with min-h */}
+           {/* This content area is now minimal. Badges are in the footer. */}
         </CardContent>
         <CardFooter className="pt-2">
           {isLowStock && <Badge variant="destructive">低库存 (阈值: {product.lowStockThreshold})</Badge>}
@@ -116,4 +111,3 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
     </>
   );
 }
-
