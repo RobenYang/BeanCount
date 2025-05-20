@@ -59,7 +59,7 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
         <TableBody>
           {batches.sort((a,b) => (a.expiryDate && b.expiryDate ? parseISO(a.expiryDate).getTime() - parseISO(b.expiryDate).getTime() : (a.productionDate && b.productionDate && !a.expiryDate && !b.expiryDate ? parseISO(a.productionDate).getTime() - parseISO(b.productionDate).getTime() : (a.createdAt && b.createdAt ? parseISO(a.createdAt).getTime() - parseISO(b.createdAt).getTime() : 0 )))).map((batch) => {
             let expiryBadgeVariant: "default" | "secondary" | "destructive" | "outline" = "secondary";
-            let daysToExpiryText = "N/A";
+            let daysToExpiryText = "";
 
             if (productCategory === 'INGREDIENT' && batch.expiryDate) {
               const expiryDate = parseISO(batch.expiryDate);
@@ -85,11 +85,14 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 {productCategory === 'INGREDIENT' && (
                   <TableCell className="text-xs">
                     {batch.expiryDate ? (
-                      <Badge variant={expiryBadgeVariant} className="text-xs whitespace-nowrap">
-                        {format(parseISO(batch.expiryDate), "yyyy-MM-dd")} ({daysToExpiryText})
+                      <Badge variant={expiryBadgeVariant} className="text-xs leading-tight">
+                        <div className="flex flex-col items-start text-left">
+                          <span>{format(parseISO(batch.expiryDate), "yyyy-MM-dd")}</span>
+                          {daysToExpiryText && <span>{daysToExpiryText}</span>}
+                        </div>
                       </Badge>
                     ) : (
-                      'N/A'
+                      <span className="text-xs text-muted-foreground">无限期</span>
                     )}
                   </TableCell>
                 )}
@@ -158,8 +161,8 @@ function ProductRow({
             <NextImage
               src={imageSrc}
               alt={product.name}
-              width={40}
-              height={40}
+              width={48}
+              height={48}
               className="object-cover aspect-square"
               data-ai-hint="product item"
             />
