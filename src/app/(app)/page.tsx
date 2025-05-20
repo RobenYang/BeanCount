@@ -4,77 +4,47 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign } from "lucide-react"; // Added CircleDollarSign
+import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign, Package as PackageIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
-import { subDays, parseISO, isWithinInterval, endOfDay, differenceInDays } from "date-fns";
-import type { Transaction, Product } from "@/lib/types";
-import { Package as PackageIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { subDays, parseISO, isWithinInterval, endOfDay, differenceInDays, format } from "date-fns";
+import type { Transaction, Product, Batch } from "@/lib/types";
+import { zhCN } from 'date-fns/locale';
+
+interface LowStockProductDetail {
+  id: string;
+  name: string;
+  currentQuantity: number;
+  unit: string;
+  threshold: number;
+}
+
+interface NearingExpiryProductDetail {
+  productId: string;
+  productName: string;
+  productUnit: string;
+  batchId: string;
+  expiryDate: string;
+  daysLeft: number;
+  currentQuantity: number;
+  warningDays: number;
+}
+
 
 export default function DashboardPage() {
   const { products, getProductStockDetails, archiveProduct, transactions, appSettings } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
+  const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
 
   useEffect(() => {
     setHasMounted(true);
   }, []);
-
-  if (!hasMounted) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
-        
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"> {/* Adjusted for 4 cards to wrap nicely */}
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <Skeleton className="h-5 w-2/5" />
-                <Skeleton className="h-4 w-4 rounded-sm" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-1/3 mb-1" />
-                <Skeleton className="h-4 w-3/4" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        
-        <h2 className="text-2xl font-semibold">产品库存水平</h2>
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {[...Array(3)].map((_, i) => ( 
-            <Card key={i} className="flex flex-col h-full">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <Skeleton className="h-6 w-3/5 mb-1" /> 
-                    <Skeleton className="h-4 w-4/5" /> 
-                  </div>
-                  <Skeleton className="h-6 w-6 rounded-sm" /> 
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <Skeleton className="h-12 w-12 rounded-md" /> 
-                  <div>
-                    <Skeleton className="h-7 w-16 mb-1" /> 
-                    <Skeleton className="h-4 w-20" /> 
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-grow pt-0 pb-2">
-                 <div className="h-48 flex items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                 </div>
-              </CardContent>
-              <CardFooter className="pt-2">
-                <Skeleton className="h-5 w-20" /> 
-              </CardFooter>
-            </Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   const activeProducts = products.filter(p => !p.isArchived);
 
@@ -84,7 +54,7 @@ export default function DashboardPage() {
   const last7DaysOutflowValue = transactions.reduce((totalValue, transaction) => {
     if (
       transaction.type === 'OUT' &&
-      !transaction.isCorrectionIncrease && 
+      !transaction.isCorrectionIncrease &&
       transaction.unitCostAtTransaction !== undefined &&
       isWithinInterval(parseISO(transaction.timestamp), { start: sevenDaysAgo, end: today })
     ) {
@@ -98,26 +68,106 @@ export default function DashboardPage() {
     return total + totalValue;
   }, 0);
 
-  const itemsNearingExpiry = activeProducts.flatMap(p => {
+  const lowStockProductsDetails: LowStockProductDetail[] = activeProducts
+    .map(p => {
+      const { totalQuantity } = getProductStockDetails(p.id);
+      return { product: p, totalQuantity };
+    })
+    .filter(({ totalQuantity }) => totalQuantity < appSettings.lowStockThreshold)
+    .map(({ product, totalQuantity }) => ({
+      id: product.id,
+      name: product.name,
+      currentQuantity: totalQuantity,
+      unit: product.unit,
+      threshold: appSettings.lowStockThreshold,
+    }));
+
+  const nearingExpiryProductsDetails: NearingExpiryProductDetail[] = activeProducts.flatMap(p => {
     if (p.category !== 'INGREDIENT') return [];
     const { batches } = getProductStockDetails(p.id);
-    return batches.filter(b => {
-      if (!b.expiryDate) return false; 
-      const daysLeft = differenceInDays(parseISO(b.expiryDate), new Date());
-      return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays;
-    });
-  }).length;
+    return batches
+      .filter(b => {
+        if (!b.expiryDate) return false;
+        const daysLeft = differenceInDays(parseISO(b.expiryDate), new Date());
+        return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays;
+      })
+      .map(b => ({
+        productId: p.id,
+        productName: p.name,
+        productUnit: p.unit,
+        batchId: b.id,
+        expiryDate: format(parseISO(b.expiryDate), "yyyy-MM-dd", { locale: zhCN }),
+        daysLeft: differenceInDays(parseISO(b.expiryDate), new Date()),
+        currentQuantity: b.currentQuantity,
+        warningDays: appSettings.expiryWarningDays,
+      }));
+  });
 
-  const lowStockItems = activeProducts.filter(p => {
-    const { totalQuantity } = getProductStockDetails(p.id);
-    return totalQuantity < appSettings.lowStockThreshold; 
-  }).length;
+  const lowStockItemsCount = lowStockProductsDetails.length;
+  const itemsNearingExpiryCount = nearingExpiryProductsDetails.length;
+
+
+  if (!hasMounted) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-5 w-2/5" />
+                <Skeleton className="h-4 w-4 rounded-sm" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-1/3 mb-1" />
+                <Skeleton className="h-4 w-3/4" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <h2 className="text-2xl font-semibold">产品库存水平</h2>
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i} className="flex flex-col h-full">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <Skeleton className="h-6 w-3/5 mb-1" />
+                    <Skeleton className="h-4 w-4/5" />
+                  </div>
+                  <Skeleton className="h-6 w-6 rounded-sm" />
+                </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <Skeleton className="h-12 w-12 rounded-md" />
+                  <div>
+                    <Skeleton className="h-7 w-16 mb-1" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-grow pt-0 pb-2">
+                 <div className="h-48 flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                 </div>
+              </CardContent>
+              <CardFooter className="pt-2">
+                <Skeleton className="h-5 w-20" />
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-bold flex items-center gap-2"><Warehouse className="h-8 w-8" /> 库存仪表盘</h1>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"> {/* For 4 cards, lg:grid-cols-3 wraps to 3 then 1. Or use lg:grid-cols-4 or xl:grid-cols-4 */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">产品总数</CardTitle>
@@ -148,20 +198,27 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground">过去7天出库产品价值总和</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          onClick={() => setIsAlertsModalOpen(true)}
+          className="cursor-pointer hover:shadow-lg transition-shadow"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsAlertsModalOpen(true)}
+          aria-label="查看预警详情"
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">提醒</CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lowStockItems + itemsNearingExpiry}</div>
+            <div className="text-2xl font-bold">{lowStockItemsCount + itemsNearingExpiryCount}</div>
             <p className="text-xs text-muted-foreground">
-              {lowStockItems} 项低库存, {itemsNearingExpiry} 项临近过期
+              {lowStockItemsCount} 项低库存, {itemsNearingExpiryCount} 项临近过期
             </p>
           </CardContent>
         </Card>
       </div>
-      
+
       <h2 className="text-2xl font-semibold">产品库存水平</h2>
       {activeProducts.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -192,6 +249,89 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={isAlertsModalOpen} onOpenChange={setIsAlertsModalOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>预警产品详情</DialogTitle>
+            <DialogDescription>
+              以下是需要您关注的低库存和临近过期的产品。
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-4">
+            <div className="space-y-6 py-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-2">低库存产品 ({lowStockProductsDetails.length})</h3>
+                {lowStockProductsDetails.length > 0 ? (
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>产品名称</TableHead>
+                          <TableHead className="text-right">当前数量</TableHead>
+                          <TableHead className="text-right">预警阈值</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lowStockProductsDetails.map(item => (
+                          <TableRow key={item.id}>
+                            <TableCell>{item.name}</TableCell>
+                            <TableCell className="text-right">{item.currentQuantity} {item.unit}</TableCell>
+                            <TableCell className="text-right">{item.threshold} {item.unit}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                ) : (
+                  <p className="text-sm text-muted-foreground">暂无低库存产品。</p>
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold mb-2">临近过期产品 ({nearingExpiryProductsDetails.length})</h3>
+                {nearingExpiryProductsDetails.length > 0 ? (
+                  <Card>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>产品名称</TableHead>
+                          <TableHead>过期日期</TableHead>
+                          <TableHead className="text-right">剩余天数</TableHead>
+                          <TableHead className="text-right">批次数量</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {nearingExpiryProductsDetails.map(item => (
+                          <TableRow key={`${item.productId}-${item.batchId}`}>
+                            <TableCell>{item.productName}</TableCell>
+                            <TableCell>{item.expiryDate}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={item.daysLeft <= 0 ? "destructive" : "outline"}>
+                                {item.daysLeft < 0 ? `已过期 ${Math.abs(item.daysLeft)}天` : `${item.daysLeft}天`}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">{item.currentQuantity} {item.productUnit}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Card>
+                ) : (
+                  <p className="text-sm text-muted-foreground">暂无临近过期产品。</p>
+                )}
+              </div>
+            </div>
+          </ScrollArea>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">关闭</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+    
