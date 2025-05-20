@@ -10,7 +10,7 @@ function authenticateRequest(request: Request): boolean {
   const apiKey = process.env.API_SECRET_KEY;
 
   if (!apiKey) {
-    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    console.warn("API_SECRET_KEY is not set. API authentication is bypassed for this request. THIS IS INSECURE FOR PRODUCTION if API_SECRET_KEY is intended to be used.");
     return true;
   }
 
@@ -18,6 +18,7 @@ function authenticateRequest(request: Request): boolean {
     const token = authHeader.substring(7);
     return token === apiKey;
   }
+  console.warn("API Authentication failed: Missing or invalid Authorization header.");
   return false;
 }
 
@@ -26,6 +27,12 @@ export async function GET(request: Request, { params }: { params: { batchId: str
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { batchId } = params;
+
+  if (!process.env.POSTGRES_URL) {
+    console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for GET /api/batches/${batchId}. Returning not found.`);
+    return NextResponse.json({ error: 'Batch not found in DB-less dev mode' }, { status: 404 });
+  }
+
   try {
     const { rows } = await sql`
       SELECT 
@@ -54,7 +61,7 @@ export async function GET(request: Request, { params }: { params: { batchId: str
     return NextResponse.json(formattedBatch);
   } catch (error) {
     console.error(`Failed to fetch batch ${batchId} from Postgres:`, error);
-    return NextResponse.json({ error: `Failed to fetch batch ${batchId}` }, { status: 500 });
+    return NextResponse.json({ error: `Failed to fetch batch ${batchId}`, details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
@@ -63,9 +70,25 @@ export async function PUT(request: Request, { params }: { params: { batchId: str
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { batchId } = params;
+  let payload: { currentQuantity?: number };
   try {
-    const { currentQuantity } = await request.json() as Partial<Pick<Batch, 'currentQuantity'>>;
+    payload = await request.json();
+  } catch(e){
+     return NextResponse.json({ error: 'Invalid JSON payload for PUT' }, { status: 400 });
+  }
+  const { currentQuantity } = payload;
 
+  if (!process.env.POSTGRES_URL) {
+    console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for PUT /api/batches/${batchId}. Simulating update.`);
+    const mockUpdatedBatch: Partial<Batch> = { // Return partial as we don't have full original batch
+        id: batchId,
+        currentQuantity: currentQuantity !== undefined ? currentQuantity : 0, 
+    };
+    return NextResponse.json(mockUpdatedBatch);
+  }
+
+
+  try {
     if (currentQuantity === undefined || typeof currentQuantity !== 'number' || currentQuantity < 0) {
       return NextResponse.json({ error: 'Valid currentQuantity is required and must be non-negative.' }, { status: 400 });
     }
@@ -101,6 +124,6 @@ export async function PUT(request: Request, { params }: { params: { batchId: str
     return NextResponse.json(formattedBatch);
   } catch (error) {
     console.error(`Failed to update batch ${batchId} in Postgres:`, error);
-    return NextResponse.json({ error: `Failed to update batch ${batchId}` }, { status: 500 });
+    return NextResponse.json({ error: `Failed to update batch ${batchId}`, details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

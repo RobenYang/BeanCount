@@ -23,16 +23,15 @@ function authenticateRequest(request: Request): boolean {
   const apiKey = process.env.API_SECRET_KEY;
 
   if (!apiKey) {
-    // If API_SECRET_KEY is not set on the server, bypass auth for local dev or misconfiguration
-    // WARNING: In production, ensure API_SECRET_KEY is always set.
-    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    console.warn("API_SECRET_KEY is not set. API authentication is bypassed for this request. THIS IS INSECURE FOR PRODUCTION if API_SECRET_KEY is intended to be used.");
     return true;
   }
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7); // Remove "Bearer "
+    const token = authHeader.substring(7);
     return token === apiKey;
   }
+  console.warn("API Authentication failed: Missing or invalid Authorization header.");
   return false;
 }
 
@@ -40,6 +39,12 @@ export async function GET(request: Request) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  if (!process.env.POSTGRES_URL) {
+    console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for GET /api/products. Returning empty array.");
+    return NextResponse.json([]);
+  }
+
   try {
     const { rows } = await sql`
       SELECT 
@@ -58,7 +63,7 @@ export async function GET(request: Request) {
     return NextResponse.json(rows);
   } catch (error) {
     console.error('Failed to fetch products from Postgres:', error);
-    return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch products', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
@@ -66,9 +71,28 @@ export async function POST(request: Request) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  let productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>;
   try {
-    const productData = await request.json() as Omit<Product, 'id' | 'createdAt' | 'isArchived'>;
-    
+    productData = await request.json();
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+  }
+
+  if (!process.env.POSTGRES_URL) {
+    console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for POST /api/products. Simulating product creation.");
+    const newProduct: Product = {
+      ...productData,
+      id: `dev-${nanoid()}`,
+      createdAt: new Date().toISOString(),
+      isArchived: false,
+      shelfLifeDays: productData.category === 'INGREDIENT' ? (productData.shelfLifeDays || 0) : null,
+      imageUrl: productData.imageUrl || null,
+    };
+    return NextResponse.json(newProduct, { status: 201 });
+  }
+  
+  try {
     if (!productData.name || !productData.category || !productData.unit || productData.lowStockThreshold === undefined) {
       return NextResponse.json({ error: 'Missing required product fields' }, { status: 400 });
     }
@@ -109,6 +133,6 @@ export async function POST(request: Request) {
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error) {
     console.error('Failed to create product in Postgres:', error);
-    return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create product', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }

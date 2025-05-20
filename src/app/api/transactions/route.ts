@@ -11,7 +11,7 @@ function authenticateRequest(request: Request): boolean {
   const apiKey = process.env.API_SECRET_KEY;
 
   if (!apiKey) {
-    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    console.warn("API_SECRET_KEY is not set. API authentication is bypassed for this request. THIS IS INSECURE FOR PRODUCTION if API_SECRET_KEY is intended to be used.");
     return true;
   }
 
@@ -19,6 +19,7 @@ function authenticateRequest(request: Request): boolean {
     const token = authHeader.substring(7);
     return token === apiKey;
   }
+  console.warn("API Authentication failed: Missing or invalid Authorization header.");
   return false;
 }
 
@@ -26,6 +27,12 @@ export async function GET(request: Request) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  if (!process.env.POSTGRES_URL) {
+    console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for GET /api/transactions. Returning empty array.");
+    return NextResponse.json([]);
+  }
+
   try {
     const { rows } = await sql`
       SELECT 
@@ -45,12 +52,12 @@ export async function GET(request: Request) {
     `;
     const formattedRows = rows.map(row => ({
         ...row,
-        timestamp: row.timestamp ? formatISO(new Date(row.timestamp)) : null,
+        timestamp: row.timestamp ? formatISO(new Date(row.timestamp)) : null, // Should always be a date
     }));
     return NextResponse.json(formattedRows);
   } catch (error) {
     console.error('Failed to fetch transactions from Postgres:', error);
-    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch transactions', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
@@ -58,21 +65,19 @@ export async function POST(request: Request) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  
+  let transactionData: Omit<Transaction, 'id' | 'timestamp'> & { timestamp?: string };
   try {
-    const transactionData = await request.json() as Omit<Transaction, 'id' | 'timestamp'> & { timestamp?: string };
-    
-    if (!transactionData.productId || !transactionData.type || transactionData.quantity === undefined) {
-      return NextResponse.json({ error: 'Missing required transaction fields' }, { status: 400 });
-    }
+      transactionData = await request.json();
+  } catch(e) {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+  }
 
-    const id = nanoid();
-    const timestamp = transactionData.timestamp ? new Date(transactionData.timestamp) : new Date();
-    if (isNaN(timestamp.getTime())) {
-        return NextResponse.json({ error: 'Invalid timestamp format provided' }, { status: 400 });
-    }
+  const id = nanoid();
+  const timestamp = transactionData.timestamp ? new Date(transactionData.timestamp) : new Date();
 
-    const newTransaction: Transaction = {
-      id,
+  const newTransaction: Transaction = {
+      id: `dev-${id}`, // Prefix for dev mode
       productId: transactionData.productId,
       productName: transactionData.productName || null,
       batchId: transactionData.batchId || null,
@@ -83,7 +88,24 @@ export async function POST(request: Request) {
       notes: transactionData.notes || null,
       unitCostAtTransaction: transactionData.unitCostAtTransaction !== undefined ? transactionData.unitCostAtTransaction : null,
       isCorrectionIncrease: transactionData.isCorrectionIncrease || false,
-    };
+  };
+  newTransaction.id = id; // Correct ID for DB
+
+  if (!process.env.POSTGRES_URL) {
+    console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for POST /api/transactions. Simulating transaction creation.");
+    newTransaction.id = `dev-${id}`; // Ensure dev prefix for dev mode object
+    return NextResponse.json(newTransaction, { status: 201 });
+  }
+
+
+  try {
+    if (!transactionData.productId || !transactionData.type || transactionData.quantity === undefined) {
+      return NextResponse.json({ error: 'Missing required transaction fields' }, { status: 400 });
+    }
+
+    if (isNaN(timestamp.getTime())) {
+        return NextResponse.json({ error: 'Invalid timestamp format provided' }, { status: 400 });
+    }
 
     await sql`
       INSERT INTO transactions (
@@ -108,6 +130,6 @@ export async function POST(request: Request) {
     return NextResponse.json(newTransaction, { status: 201 });
   } catch (error) {
     console.error('Failed to create transaction in Postgres:', error);
-    return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to create transaction', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
