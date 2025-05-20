@@ -24,7 +24,7 @@ import { format, isValid, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import { CalendarIcon, Archive, Image as ImageIconLucide } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react"; // Added useMemo
 import NextImage from "next/image";
 import { toast } from "@/hooks/use-toast";
 
@@ -40,7 +40,7 @@ const stockIntakeFormSchemaBase = z.object({
 type StockIntakeFormValues = z.infer<typeof stockIntakeFormSchemaBase>;
 
 export function StockIntakeForm() {
-  const { products, addBatch, getProductById, getMostRecentUnitCost } = useInventory();
+  const { products, addBatch, getProductById, getMostRecentUnitCost, batches: allBatches } = useInventory(); // Added allBatches
   const activeProducts = products.filter(p => !p.isArchived);
 
   const form = useForm<StockIntakeFormValues>({
@@ -56,6 +56,23 @@ export function StockIntakeForm() {
   const selectedProductId = form.watch("productId");
   const selectedProduct = selectedProductId ? getProductById(selectedProductId) : null;
 
+  const sortedActiveProducts = useMemo(() => {
+    const productLastIntakeTime: Record<string, number> = {};
+
+    allBatches.forEach(batch => {
+      const batchTime = parseISO(batch.createdAt).getTime();
+      if (!productLastIntakeTime[batch.productId] || batchTime > productLastIntakeTime[batch.productId]) {
+        productLastIntakeTime[batch.productId] = batchTime;
+      }
+    });
+
+    return [...activeProducts].sort((a, b) => {
+      const timeA = productLastIntakeTime[a.id] || 0; // Products with no batches go to the end
+      const timeB = productLastIntakeTime[b.id] || 0;
+      return timeB - timeA; // Sort descending
+    });
+  }, [activeProducts, allBatches]);
+
   useEffect(() => {
     if (selectedProduct) {
       if (selectedProduct.category !== 'INGREDIENT') {
@@ -65,15 +82,14 @@ export function StockIntakeForm() {
       if (recentCost !== undefined) {
         form.setValue("unitCost", recentCost, { shouldValidate: true, shouldDirty: true });
       } else {
-        // If no recent cost, clear it or set to a default if desired (e.g., 0)
-        form.setValue("unitCost", undefined); // Or some other default
+        form.setValue("unitCost", undefined); // Clear unit cost if no recent cost for the new product
       }
     } else {
       form.setValue("unitCost", undefined);
       form.setValue("productionDate", null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProduct, form.setValue, getMostRecentUnitCost]);
+  }, [selectedProduct, form.setValue, getMostRecentUnitCost]); // Removed getProductById as it's memoized in context
 
 
   function onSubmit(data: StockIntakeFormValues) {
@@ -92,7 +108,7 @@ export function StockIntakeForm() {
       form.setError("unitCost", { type: "manual", message: "单位成本为必填项且不能为负。" });
       return;
     }
-     if (data.initialQuantity === undefined || data.initialQuantity <=0) { // Ensure initialQuantity is also checked
+     if (data.initialQuantity === undefined || data.initialQuantity <=0) { 
         form.setError("initialQuantity", { type: "manual", message: "接收数量必须大于0。" });
         return;
     }
@@ -140,7 +156,7 @@ export function StockIntakeForm() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {activeProducts.map((product) => (
+                      {sortedActiveProducts.map((product) => ( // Use sortedActiveProducts here
                         <SelectItem key={product.id} value={product.id}>
                           {product.name} ({product.unit}) - {product.category === 'INGREDIENT' ? '食材' : '非食材'}
                         </SelectItem>
@@ -278,5 +294,3 @@ export function StockIntakeForm() {
     </Card>
   );
 }
-
-    
