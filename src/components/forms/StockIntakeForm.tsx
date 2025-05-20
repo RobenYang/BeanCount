@@ -27,7 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 const stockIntakeFormSchema = z.object({
   productId: z.string().min(1, "必须选择产品。"),
   productionDate: z.date({ required_error: "生产日期为必填项。" }),
-  initialQuantity: z.coerce.number().gt(0, { message: "接收数量必须大于0。" }),
+  initialQuantity: z.coerce.number().min(1, { message: "接收数量至少为1。" }), // Updated rule and message
   unitCost: z.coerce.number().min(0, "单位成本不能为负且为必填项。"),
 });
 
@@ -155,13 +155,14 @@ export function StockIntakeForm() {
                     <Input
                       type="number"
                       placeholder="例如: 10"
+                      min="1" // Added min attribute
                       name={field.name}
                       onBlur={field.onBlur}
                       ref={field.ref}
-                      value={field.value === undefined ? '' : String(field.value)} // Ensure controlled input
+                      value={field.value === undefined ? '' : String(field.value)} 
                       onChange={(e) => {
                         const val = e.target.value;
-                        field.onChange(val === '' ? undefined : parseFloat(val)); // Update RHF state
+                        field.onChange(val === '' ? undefined : parseFloat(val)); 
                       }}
                     />
                   </FormControl>
@@ -181,13 +182,14 @@ export function StockIntakeForm() {
                       type="number"
                       step="0.01"
                       placeholder="例如: 15.50"
+                      min="0" // unitCost can be 0
                       name={field.name}
                       onBlur={field.onBlur}
                       ref={field.ref}
-                      value={field.value === undefined ? '' : String(field.value)} // Ensure controlled input
+                      value={field.value === undefined ? '' : String(field.value)} 
                       onChange={(e) => {
                         const val = e.target.value;
-                        field.onChange(val === '' ? undefined : parseFloat(val)); // Update RHF state
+                        field.onChange(val === '' ? undefined : parseFloat(val)); 
                       }}
                     />
                   </FormControl>
