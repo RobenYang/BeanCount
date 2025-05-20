@@ -9,10 +9,10 @@ import {
   PlusCircle,
   Archive,
   PackageMinus,
-  BarChart3,
+  BarChart3, // Keeping BarChart3 for Stock Analysis for now
   Settings,
-  History, // Added History icon
-  // Users,
+  History, 
+  Activity // Example for a new icon if needed, or use existing
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -31,7 +31,7 @@ const menuItems = [
   { href: "/products/add", label: "添加产品", icon: PlusCircle },
   { href: "/stock/intake", label: "库存入库", icon: Archive },
   { href: "/stock/outflow", label: "库存出库", icon: PackageMinus },
-  { href: "/stock/valuation", label: "库存统计", icon: BarChart3 },
+  { href: "/stock-analysis", label: "库存分析", icon: BarChart3 }, // Updated label and href
 ]
 
 const settingsMenuItems = [
@@ -90,25 +90,6 @@ export function MainNav() {
           </SidebarMenuItem>
         ))}
       </SidebarGroup>
-      {/*
-      <SidebarGroup>
-        <SidebarGroupLabel>设置</SidebarGroupLabel>
-        <SidebarMenuItem>
-          <Link href="/settings" passHref legacyBehavior>
-            <SidebarMenuButton asChild isActive={pathname === "/settings"} onClick={handleLinkClick} tooltip="常规设置">
-              <a><Settings /><span>设置</span></a>
-            </SidebarMenuButton>
-          </Link>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <Link href="/users" passHref legacyBehavior>
-            <SidebarMenuButton asChild isActive={pathname === "/users"} onClick={handleLinkClick} tooltip="管理用户">
-              <a><Users /><span>用户</span></a>
-            </SidebarMenuButton>
-          </Link>
-        </SidebarMenuItem>
-      </SidebarGroup>
-      */}
     </SidebarMenu>
   )
 }

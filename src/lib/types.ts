@@ -56,33 +56,16 @@ export interface Transaction {
   isCorrectionIncrease?: boolean; // True if this 'OUT' transaction actually increased stock (negative outflow)
 }
 
-// For AI Stock Analysis Summary
-export const TIMESCALE_OPTIONS = [
-  { value: 'LAST_7_DAYS', label: '过去7天' },
-  { value: 'LAST_30_DAYS', label: '过去30天' },
-  { value: 'LAST_90_DAYS', label: '过去90天' },
-  { value: 'LAST_YEAR', label: '过去一年' },
-  { value: 'ALL_TIME', label: '全部时间' },
-];
-
-// For Stock Analysis Chart View
-export const CHART_TIMESCALE_OPTIONS = [
-  { value: 'LAST_7_DAYS_DAILY', label: '每日 (过去7天)' },
-  { value: 'LAST_30_DAYS_DAILY', label: '每日 (过去30天)' },
-  { value: 'LAST_3_MONTHS_WEEKLY', label: '每周 (过去3个月)' },
-  { value: 'LAST_12_MONTHS_MONTHLY', label: '每月 (过去12个月)' },
-] as const;
-
-export type ChartTimeScaleValue = typeof CHART_TIMESCALE_OPTIONS[number]['value'];
-
-export interface ChartDataPoint {
-  date: string; // Formatted date string for X-axis
-  stockValue: number; // Stock value based on intake cost
-  quantity: number;   // Stock quantity
-  [key: string]: number | string; // Allows for dynamic data keys
+export interface AppSettings {
+  expiryWarningDays: number;
 }
 
-export interface AppSettings {
-  // lowStockThreshold: number; // Removed global threshold
-  expiryWarningDays: number;
+export interface ProductStockAnalysis {
+  productId: string;
+  productName: string;
+  productUnit: string;
+  currentStock: number;
+  avgDailyConsumptionLastWeek: number;
+  predictedDepletionDate: string; // Formatted date or a string like 'N/A', '已耗尽', '无法预测'
+  daysToDepletion?: number; // Numerical days, could be Infinity or NaN
 }
