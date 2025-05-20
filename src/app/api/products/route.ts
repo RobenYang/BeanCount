@@ -1,52 +1,97 @@
+
 'use server';
 import { NextResponse } from 'next/server';
 import type { Product } from '@/lib/types';
 import { nanoid } from 'nanoid';
+import { sql } from '@vercel/postgres';
 
-// In-memory store for demonstration purposes ONLY.
-// In a real app, this would be a database.
-// Data will be lost if the server restarts or scales.
-let productsStore: Product[] = [
-    { id: 'api_sample_prod_1', name: '阿拉比卡咖啡豆 (来自API)', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365, lowStockThreshold: 2, createdAt: new Date().toISOString(), isArchived: false, imageUrl: 'https://placehold.co/300x300.png?text=豆API' },
-    { id: 'api_sample_prod_2', name: '全脂牛奶 (来自API)', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, lowStockThreshold: 3, createdAt: new Date().toISOString(), isArchived: false, imageUrl: 'https://placehold.co/300x300.png?text=奶API' },
-    { id: 'api_sample_prod_3', name: '马克杯 (来自API)', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, lowStockThreshold: 5, createdAt: new Date().toISOString(), isArchived: false, imageUrl: 'https://placehold.co/300x300.png?text=杯API' },
-];
+// The in-memory store is replaced by Vercel Postgres.
+// You will need to set up a 'products' table in your Vercel Postgres database.
+// Ensure environment variables for Vercel Postgres (e.g., POSTGRES_URL) are set in your Vercel project.
+
+// Example 'products' table schema (SQL):
+// CREATE TABLE products (
+//     id TEXT PRIMARY KEY,
+//     name TEXT NOT NULL,
+//     category TEXT NOT NULL, -- 'INGREDIENT' or 'NON_INGREDIENT'
+//     unit TEXT NOT NULL,
+//     shelf_life_days INTEGER, -- Nullable for NON_INGREDIENT
+//     low_stock_threshold INTEGER NOT NULL,
+//     image_url TEXT,
+//     created_at TIMESTAMPTZ NOT NULL,
+//     is_archived BOOLEAN NOT NULL DEFAULT FALSE
+// );
 
 export async function GET() {
-  // In a real app, you would fetch data from your database here.
-  // Simulate a short delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  return NextResponse.json(productsStore);
+  try {
+    // Note: Column names in SQL (e.g., shelf_life_days) are mapped to JS camelCase (shelfLifeDays) using AS.
+    const { rows } = await sql`
+      SELECT 
+        id, 
+        name, 
+        category, 
+        unit, 
+        shelf_life_days AS "shelfLifeDays", 
+        low_stock_threshold AS "lowStockThreshold", 
+        image_url AS "imageUrl", 
+        created_at AS "createdAt", 
+        is_archived AS "isArchived" 
+      FROM products 
+      ORDER BY created_at DESC;
+    `;
+    return NextResponse.json(rows);
+  } catch (error) {
+    console.error('Failed to fetch products from Postgres:', error);
+    return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
     const productData = await request.json() as Omit<Product, 'id' | 'createdAt' | 'isArchived'>;
     
-    // Basic validation (in a real app, use Zod or a similar library)
     if (!productData.name || !productData.category || !productData.unit || productData.lowStockThreshold === undefined) {
       return NextResponse.json({ error: 'Missing required product fields' }, { status: 400 });
     }
-    // Ensure shelfLifeDays is null if not INGREDIENT
+    
     const shelfLifeDays = productData.category === 'INGREDIENT' ? (productData.shelfLifeDays || 0) : null;
+    const id = nanoid();
+    const createdAt = new Date().toISOString();
+    const isArchived = false;
+    const imageUrl = productData.imageUrl || null;
 
-
+    await sql`
+      INSERT INTO products (id, name, category, unit, shelf_life_days, low_stock_threshold, image_url, created_at, is_archived)
+      VALUES (
+        ${id}, 
+        ${productData.name}, 
+        ${productData.category}, 
+        ${productData.unit}, 
+        ${shelfLifeDays}, 
+        ${productData.lowStockThreshold}, 
+        ${imageUrl}, 
+        ${createdAt}, 
+        ${isArchived}
+      );
+    `;
+    
     const newProduct: Product = {
-      ...productData,
-      shelfLifeDays, // use processed shelfLifeDays
-      id: nanoid(),
-      createdAt: new Date().toISOString(),
-      isArchived: false,
+      name: productData.name,
+      category: productData.category,
+      unit: productData.unit,
+      lowStockThreshold: productData.lowStockThreshold,
+      shelfLifeDays,
+      imageUrl,
+      id,
+      createdAt,
+      isArchived,
     };
     
-    // In a real app, you would save the new product to your database here.
-    productsStore.push(newProduct);
-    
-    // Simulate a short delay
-    await new Promise(resolve => setTimeout(resolve, 300));
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error) {
-    console.error('Failed to create product via API:', error);
+    console.error('Failed to create product in Postgres:', error);
+    // Check if the error is a known Postgres error (e.g., unique constraint violation)
+    // and return a more specific error message if possible.
     return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
   }
 }
