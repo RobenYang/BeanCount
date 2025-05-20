@@ -6,7 +6,26 @@ import { sql } from '@vercel/postgres';
 import { nanoid } from 'nanoid';
 import { formatISO } from 'date-fns';
 
-export async function GET() {
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
+
+  if (!apiKey) {
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    return token === apiKey;
+  }
+  return false;
+}
+
+export async function GET(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { rows } = await sql`
       SELECT 
@@ -24,7 +43,6 @@ export async function GET() {
       FROM transactions 
       ORDER BY timestamp DESC;
     `;
-    // Ensure timestamp is ISO string
     const formattedRows = rows.map(row => ({
         ...row,
         timestamp: row.timestamp ? formatISO(new Date(row.timestamp)) : null,
@@ -37,6 +55,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const transactionData = await request.json() as Omit<Transaction, 'id' | 'timestamp'> & { timestamp?: string };
     
@@ -45,12 +66,10 @@ export async function POST(request: Request) {
     }
 
     const id = nanoid();
-    // Use provided timestamp if available and valid, otherwise use current time
     const timestamp = transactionData.timestamp ? new Date(transactionData.timestamp) : new Date();
     if (isNaN(timestamp.getTime())) {
         return NextResponse.json({ error: 'Invalid timestamp format provided' }, { status: 400 });
     }
-
 
     const newTransaction: Transaction = {
       id,

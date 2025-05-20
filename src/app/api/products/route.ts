@@ -5,10 +5,6 @@ import type { Product } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import { sql } from '@vercel/postgres';
 
-// The in-memory store is replaced by Vercel Postgres.
-// You will need to set up a 'products' table in your Vercel Postgres database.
-// Ensure environment variables for Vercel Postgres (e.g., POSTGRES_URL) are set in your Vercel project.
-
 // Example 'products' table schema (SQL):
 // CREATE TABLE products (
 //     id TEXT PRIMARY KEY,
@@ -22,9 +18,29 @@ import { sql } from '@vercel/postgres';
 //     is_archived BOOLEAN NOT NULL DEFAULT FALSE
 // );
 
-export async function GET() {
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
+
+  if (!apiKey) {
+    // If API_SECRET_KEY is not set on the server, bypass auth for local dev or misconfiguration
+    // WARNING: In production, ensure API_SECRET_KEY is always set.
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7); // Remove "Bearer "
+    return token === apiKey;
+  }
+  return false;
+}
+
+export async function GET(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
-    // Note: Column names in SQL (e.g., shelf_life_days) are mapped to JS camelCase (shelfLifeDays) using AS.
     const { rows } = await sql`
       SELECT 
         id, 
@@ -47,6 +63,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const productData = await request.json() as Omit<Product, 'id' | 'createdAt' | 'isArchived'>;
     
@@ -90,8 +109,6 @@ export async function POST(request: Request) {
     return NextResponse.json(newProduct, { status: 201 });
   } catch (error) {
     console.error('Failed to create product in Postgres:', error);
-    // Check if the error is a known Postgres error (e.g., unique constraint violation)
-    // and return a more specific error message if possible.
     return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
   }
 }

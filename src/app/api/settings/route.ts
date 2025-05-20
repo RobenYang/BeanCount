@@ -4,8 +4,33 @@ import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import type { AppSettings } from '@/lib/types';
 
-// GET /api/settings - Fetches current app settings
-export async function GET() {
+// CREATE TABLE app_settings (
+//     id INTEGER PRIMARY KEY DEFAULT 1,
+//     expiry_warning_days INTEGER NOT NULL DEFAULT 7,
+//     CONSTRAINT single_row_check CHECK (id = 1)
+// );
+// INSERT INTO app_settings (id, expiry_warning_days) VALUES (1, 7) ON CONFLICT (id) DO NOTHING;
+
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
+
+  if (!apiKey) {
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    return token === apiKey;
+  }
+  return false;
+}
+
+export async function GET(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { rows } = await sql`
       SELECT expiry_warning_days AS "expiryWarningDays"
@@ -13,10 +38,7 @@ export async function GET() {
       WHERE id = 1; 
     `;
     if (rows.length === 0) {
-      // This case should ideally not happen if default row is inserted.
-      // Fallback to default if table is empty or row is missing.
       const defaultSettings: AppSettings = { expiryWarningDays: 7 };
-      // Optionally, insert default settings if not found
       await sql`
         INSERT INTO app_settings (id, expiry_warning_days) 
         VALUES (1, ${defaultSettings.expiryWarningDays}) 
@@ -27,14 +49,15 @@ export async function GET() {
     return NextResponse.json(rows[0]);
   } catch (error) {
     console.error('Failed to fetch app settings from Postgres:', error);
-    // Return default settings on error to ensure app functions
     const defaultSettingsOnError: AppSettings = { expiryWarningDays: 7 };
-    return NextResponse.json(defaultSettingsOnError, { status: 500 }); // Indicate error but provide defaults
+    return NextResponse.json(defaultSettingsOnError, { status: 500 });
   }
 }
 
-// PUT /api/settings - Updates app settings
 export async function PUT(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { expiryWarningDays } = await request.json() as Partial<AppSettings>;
 
@@ -50,7 +73,6 @@ export async function PUT(request: Request) {
     `;
 
     if (result.rowCount === 0) {
-      // If no row was updated (e.g., id=1 didn't exist), try to insert it.
       await sql`
         INSERT INTO app_settings (id, expiry_warning_days)
         VALUES (1, ${expiryWarningDays})
@@ -69,4 +91,3 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Failed to update app settings' }, { status: 500 });
   }
 }
-    

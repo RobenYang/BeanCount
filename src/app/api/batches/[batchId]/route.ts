@@ -5,8 +5,26 @@ import { sql } from '@vercel/postgres';
 import type { Batch } from '@/lib/types';
 import { formatISO } from 'date-fns';
 
-// GET /api/batches/[batchId] - Optional: if needed to fetch a single batch
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
+
+  if (!apiKey) {
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    return token === apiKey;
+  }
+  return false;
+}
+
 export async function GET(request: Request, { params }: { params: { batchId: string } }) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { batchId } = params;
   try {
     const { rows } = await sql`
@@ -27,7 +45,6 @@ export async function GET(request: Request, { params }: { params: { batchId: str
       return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
     }
     const batch = rows[0] as Batch;
-    // Ensure date fields are correctly formatted as ISO strings
     const formattedBatch = {
       ...batch,
       productionDate: batch.productionDate ? formatISO(new Date(batch.productionDate)) : null,
@@ -41,9 +58,10 @@ export async function GET(request: Request, { params }: { params: { batchId: str
   }
 }
 
-
-// PUT /api/batches/[batchId] - To update batch details, specifically currentQuantity
 export async function PUT(request: Request, { params }: { params: { batchId: string } }) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { batchId } = params;
   try {
     const { currentQuantity } = await request.json() as Partial<Pick<Batch, 'currentQuantity'>>;
@@ -73,7 +91,6 @@ export async function PUT(request: Request, { params }: { params: { batchId: str
     }
     
     const updatedBatch = result.rows[0] as Batch;
-    // Ensure date fields are correctly formatted as ISO strings
     const formattedBatch = {
       ...updatedBatch,
       productionDate: updatedBatch.productionDate ? formatISO(new Date(updatedBatch.productionDate)) : null,
@@ -87,4 +104,3 @@ export async function PUT(request: Request, { params }: { params: { batchId: str
     return NextResponse.json({ error: `Failed to update batch ${batchId}` }, { status: 500 });
   }
 }
-    

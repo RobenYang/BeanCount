@@ -4,8 +4,26 @@ import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import type { Product } from '@/lib/types';
 
-// GET /api/products/[productId] - Optional: if needed to fetch a single product
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
+
+  if (!apiKey) {
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    return token === apiKey;
+  }
+  return false;
+}
+
 export async function GET(request: Request, { params }: { params: { productId: string } }) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { productId } = params;
   try {
     const { rows } = await sql`
@@ -29,18 +47,18 @@ export async function GET(request: Request, { params }: { params: { productId: s
   }
 }
 
-// PUT /api/products/[productId] - To update product details
 export async function PUT(request: Request, { params }: { params: { productId: string } }) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { productId } = params;
   try {
     const { name, unit, shelfLifeDays, lowStockThreshold, imageUrl } = await request.json() as Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>;
 
-    // Basic validation
     if (!name || !unit || lowStockThreshold === undefined) {
       return NextResponse.json({ error: 'Missing required fields for product update (name, unit, lowStockThreshold)' }, { status: 400 });
     }
     
-    // Fetch current product to know its category (category is not updatable via this endpoint)
     const currentProductResult = await sql`SELECT category FROM products WHERE id = ${productId}`;
     if (currentProductResult.rows.length === 0) {
         return NextResponse.json({ error: 'Product not found for category check' }, { status: 404 });
@@ -48,7 +66,6 @@ export async function PUT(request: Request, { params }: { params: { productId: s
     const category = currentProductResult.rows[0].category;
 
     const shelfLifeDaysForDb = category === 'INGREDIENT' ? (shelfLifeDays || 0) : null;
-
 
     const result = await sql`
       UPDATE products
@@ -78,8 +95,10 @@ export async function PUT(request: Request, { params }: { params: { productId: s
   }
 }
 
-// PATCH /api/products/[productId] - To archive/unarchive a product
 export async function PATCH(request: Request, { params }: { params: { productId: string } }) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   const { productId } = params;
   try {
     const { isArchived } = await request.json() as { isArchived: boolean };
@@ -111,17 +130,11 @@ export async function PATCH(request: Request, { params }: { params: { productId:
   }
 }
 
-// DELETE /api/products/[productId] - Optional: if hard delete is ever needed
-// For now, we use soft delete (archiving)
 export async function DELETE(request: Request, { params }: { params: { productId: string } }) {
-  const { productId } = params;
-  // Example: Hard delete (use with caution, ensure batches/transactions are handled)
-  // try {
-  //   await sql`DELETE FROM products WHERE id = ${productId};`;
-  //   return NextResponse.json({ message: `Product ${productId} deleted successfully` });
-  // } catch (error) {
-  //   console.error(`Failed to delete product ${productId} from Postgres:`, error);
-  //   return NextResponse.json({ error: `Failed to delete product ${productId}` }, { status: 500 });
-  // }
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  // const { productId } = params;
+  // Hard delete not implemented.
   return NextResponse.json({ message: 'Hard delete not implemented. Use PATCH to archive/unarchive.' }, { status: 405 });
 }

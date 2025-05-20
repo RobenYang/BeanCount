@@ -6,9 +6,22 @@ import { nanoid } from 'nanoid';
 import { addDays, formatISO, parseISO } from 'date-fns';
 import { sql } from '@vercel/postgres';
 
-// In-memory store REMOVED. Data is now managed by Vercel Postgres.
+function authenticateRequest(request: Request): boolean {
+  const authHeader = request.headers.get('Authorization');
+  const apiKey = process.env.API_SECRET_KEY;
 
-// Helper function to fetch product details from the 'products' table
+  if (!apiKey) {
+    console.warn("API_SECRET_KEY is not set. Skipping authentication. THIS IS INSECURE FOR PRODUCTION.");
+    return true;
+  }
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    return token === apiKey;
+  }
+  return false;
+}
+
 async function getProductFromDB(productId: string): Promise<Partial<Product> | null> {
   try {
     const { rows } = await sql`
@@ -22,12 +35,14 @@ async function getProductFromDB(productId: string): Promise<Partial<Product> | n
     return null;
   } catch (error) {
     console.error('Error fetching product from DB in batches API:', error);
-    return null; // Or rethrow, depending on desired error handling
+    return null;
   }
 }
 
-
-export async function GET() {
+export async function GET(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const { rows } = await sql`
       SELECT 
@@ -43,7 +58,6 @@ export async function GET() {
       FROM batches 
       ORDER BY created_at DESC;
     `;
-    // Ensure date fields are correctly formatted as ISO strings if they aren't already
     const formattedRows = rows.map(row => ({
       ...row,
       productionDate: row.productionDate ? formatISO(new Date(row.productionDate)) : null,
@@ -58,6 +72,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
     const batchData = await request.json() as Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null };
     
@@ -74,7 +91,7 @@ export async function POST(request: Request) {
     }
 
     const batchId = nanoid();
-    const batchCreatedAt = new Date(); // Use Date object for SQL
+    const batchCreatedAt = new Date();
     let productionDateForDb: Date | null = null;
     let expiryDateForDb: Date | null = null;
 
@@ -90,9 +107,8 @@ export async function POST(request: Request) {
       } catch (e) {
         return NextResponse.json({ error: 'Invalid production date format' }, { status: 400 });
       }
-    } else { // NON_INGREDIENT
+    } else {
       productionDateForDb = batchData.productionDate ? parseISO(batchData.productionDate) : batchCreatedAt;
-      // expiryDate remains null for NON_INGREDIENT
     }
 
     await sql`
