@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { stockValuationSummary, type StockValuationSummaryInput, type StockValuationSummaryOutput } from "@/ai/flows/stock-valuation-summary";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react"; // Added useEffect here
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bot, Loader2 } from "lucide-react";
 import { OUTFLOW_REASONS_WITH_LABELS, TIMESCALE_OPTIONS } from "@/lib/types";
@@ -41,17 +41,27 @@ export function StockValuationForm() {
   const form = useForm<StockValuationFormValues>({
     resolver: zodResolver(stockValuationFormSchema),
     defaultValues: {
-      productId: activeProducts.length > 0 ? activeProducts[0].id : "",
+      productId: "", // Initialize with empty or handle in useEffect
       timeScale: TIMESCALE_OPTIONS[0].value,
       outflowReason: "ALL", 
     },
   });
-   // Effect to update default productId if activeProducts change and current selection is invalid or not set
-  useState(() => {
-    if (activeProducts.length > 0 && (!form.getValues("productId") || !activeProducts.find(p => p.id === form.getValues("productId")))) {
-      form.setValue("productId", activeProducts[0].id);
+
+  useEffect(() => {
+    if (activeProducts.length > 0) {
+      const currentProductId = form.getValues("productId");
+      // Set productId if it's not already set or if the current one is no longer in activeProducts
+      if (!currentProductId || !activeProducts.find(p => p.id === currentProductId)) {
+        form.setValue("productId", activeProducts[0].id, { shouldValidate: true, shouldDirty: true });
+      }
+    } else {
+      // If no active products, clear the selection or set to a placeholder
+      // This depends on desired behavior, for now, let's ensure it doesn't try to set activeProducts[0].id
+       if (form.getValues("productId")) { // Only reset if there was a value
+         form.setValue("productId", "", { shouldValidate: true, shouldDirty: true });
+       }
     }
-  });
+  }, [activeProducts, form]);
 
 
   async function onSubmit(data: StockValuationFormValues) {
@@ -95,7 +105,14 @@ export function StockValuationForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>产品</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value} disabled={activeProducts.length === 0}>
+                    <Select 
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // Trigger re-validation or other actions if needed
+                      }} 
+                      value={field.value} // Ensure value is controlled
+                      disabled={activeProducts.length === 0}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="选择一个产品" />
@@ -119,7 +136,7 @@ export function StockValuationForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>时间范围</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="选择一个时间范围" />
@@ -144,7 +161,7 @@ export function StockValuationForm() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>出库原因 (筛选)</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="选择一个出库原因" />
@@ -163,7 +180,7 @@ export function StockValuationForm() {
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full" disabled={isLoading || activeProducts.length === 0}>
+              <Button type="submit" className="w-full" disabled={isLoading || activeProducts.length === 0 || !form.getValues("productId")}>
                 {isLoading ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
@@ -186,7 +203,7 @@ export function StockValuationForm() {
       )}
 
       {error && (
-        <Card className="max-w-2xl mx-auto mt-6" variant="destructive">
+        <Card className="max-w-2xl mx-auto mt-6" variant="destructive"> {/* Assuming Card can take variant */}
           <CardHeader>
             <CardTitle>错误</CardTitle>
           </CardHeader>
@@ -211,4 +228,3 @@ export function StockValuationForm() {
     </div>
   );
 }
-
