@@ -18,12 +18,10 @@ import { Input } from "@/components/ui/input";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { AppSettings } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Save, Palette } from "lucide-react"; // Removed Users, Trash2
+import { Save, Palette, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-// import { useAuth } from '@/contexts/AuthContext'; // No longer needed for user management UI
-// import { toast } from "@/hooks/use-toast"; // No longer needed for user management UI
 
 const settingsFormSchema = z.object({
   expiryWarningDays: z.coerce
@@ -34,37 +32,41 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-// addUserFormSchema and AddUserFormValues are removed
-
 export function SettingsForm() {
-  const { appSettings, updateAppSettings } = useInventory();
-  // const auth = useAuth(); // No longer needed for user management UI
+  const { appSettings, updateAppSettings, isLoadingSettings } = useInventory();
   const [selectedTheme, setSelectedTheme] = useState<string>('light');
 
   const settingsHookForm = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
-    defaultValues: {
-      expiryWarningDays: appSettings.expiryWarningDays,
+    defaultValues: { // Default values will be updated by useEffect
+      expiryWarningDays: DEFAULT_APP_SETTINGS.expiryWarningDays,
     },
   });
 
-  // addUserHookForm is removed
-
   useEffect(() => {
-    settingsHookForm.reset({
-        expiryWarningDays: appSettings.expiryWarningDays,
-    });
-  }, [appSettings, settingsHookForm]);
+    // Initialize form with settings once they are loaded or with defaults
+    if (!isLoadingSettings) {
+      settingsHookForm.reset({
+          expiryWarningDays: appSettings.expiryWarningDays,
+      });
+    }
+  }, [appSettings, isLoadingSettings, settingsHookForm]);
 
   useEffect(() => {
     const storedTheme = localStorage.getItem('theme');
     if (storedTheme) {
       setSelectedTheme(storedTheme);
+      // Apply theme immediately if stored
+      if (storedTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
     } else {
       // Fallback to checking class on documentElement if no theme is stored
-      // This part might be redundant if ThemeInitializer already handles it well,
-      // but it ensures the radio buttons reflect the current theme.
-      setSelectedTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+      const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+      setSelectedTheme(currentTheme);
+      localStorage.setItem('theme', currentTheme); // Optionally save default if not set
     }
   }, []);
 
@@ -78,11 +80,9 @@ export function SettingsForm() {
     }
   };
 
-  function onSubmitSettings(data: SettingsFormValues) {
-    updateAppSettings(data);
+  async function onSubmitSettings(data: SettingsFormValues) {
+    await updateAppSettings(data);
   }
-
-  // handleAddUser and handleDeleteUser functions are removed
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -94,34 +94,46 @@ export function SettingsForm() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Form {...settingsHookForm}>
-            <form onSubmit={settingsHookForm.handleSubmit(onSubmitSettings)} className="space-y-6">
-              <FormField
-                control={settingsHookForm.control}
-                name="expiryWarningDays"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>临近过期预警天数</FormLabel>
-                    <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="例如: 7" 
-                        {...field}
-                        onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      当食材类产品距离过期日期小于或等于此天数时，将标记为临近过期。
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <Button type="submit" className="w-full">
-                <Save className="mr-2 h-4 w-4" /> 保存常规设置
-              </Button>
-            </form>
-          </Form>
+          {isLoadingSettings ? (
+            <div className="flex items-center justify-center h-20">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="ml-2">正在加载设置...</p>
+            </div>
+          ) : (
+            <Form {...settingsHookForm}>
+              <form onSubmit={settingsHookForm.handleSubmit(onSubmitSettings)} className="space-y-6">
+                <FormField
+                  control={settingsHookForm.control}
+                  name="expiryWarningDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>临近过期预警天数</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="number" 
+                          placeholder="例如: 7" 
+                          {...field}
+                          onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        当食材类产品距离过期日期小于或等于此天数时，将标记为临近过期。
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={settingsHookForm.formState.isSubmitting}>
+                  {settingsHookForm.formState.isSubmitting ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-2 h-4 w-4" />
+                  )}
+                   保存常规设置
+                </Button>
+              </form>
+            </Form>
+          )}
         </CardContent>
       </Card>
 
@@ -152,8 +164,6 @@ export function SettingsForm() {
           </RadioGroup>
         </CardContent>
       </Card>
-
-      {/* Account Management Card is removed */}
     </div>
   );
 }
