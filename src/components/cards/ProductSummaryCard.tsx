@@ -93,7 +93,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                         </Badge>
                       </TableCell>
                       <TableCell className="py-1.5 text-right text-sm">{batch.currentQuantity}</TableCell>
-                      <TableCell className="py-1.5 text-right text-sm">${batch.unitCost.toFixed(2)}</TableCell>
+                      <TableCell className="py-1.5 text-right text-sm">¥{batch.unitCost.toFixed(2)}</TableCell>
                     </TableRow>
                   );
                 })}

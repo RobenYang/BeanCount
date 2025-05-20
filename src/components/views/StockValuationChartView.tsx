@@ -30,7 +30,7 @@ const CHART_TIMESCALE_OPTIONS = [
 
 function calculateHistoricalStockData(
   productId: string,
-  timeScale: ChartTimeScaleValue, // Use the specific type
+  timeScale: ChartTimeScaleValue, 
   allBatches: Batch[],
   allTransactions: Transaction[]
 ): ChartDataPoint[] {
@@ -54,8 +54,7 @@ function calculateHistoricalStockData(
       while (currentDateW <= today) {
           reportDates.push(endOfDay(currentDateW));
           currentDateW = addWeeks(currentDateW, 1);
-          if (reportDates.length > 15 && reportDates.length < 20) { // Allow slightly more for weekly over 3 months
-            // Break if too many points to avoid performance issues, adjust limit as needed
+          if (reportDates.length > 15 && reportDates.length < 20) { 
           } else if (reportDates.length >=20) break;
       }
       break;
@@ -80,7 +79,6 @@ function calculateHistoricalStockData(
     let totalQuantityForDate = 0;
 
     productBatches.forEach(batch => {
-      // Batch must exist at or before the reportDate
       if (isAfter(parseISO(batch.createdAt), reportDate)) {
         return;
       }
@@ -88,22 +86,21 @@ function calculateHistoricalStockData(
       let quantityInBatchAtReportDate = batch.initialQuantity;
       const transactionsForBatchBeforeOrOnReportDate = allTransactions.filter(
         t => t.batchId === batch.id &&
-             !isAfter(parseISO(t.timestamp), reportDate) // transaction timestamp <= reportDate
+             !isAfter(parseISO(t.timestamp), reportDate) 
       );
 
       transactionsForBatchBeforeOrOnReportDate.forEach(t => {
         if (t.type === 'OUT') {
-          quantityInBatchAtReportDate -= t.quantity;
+           if (t.isCorrectionIncrease) { // If it was a negative outflow (correction increase)
+            quantityInBatchAtReportDate += t.quantity; // Add back
+          } else {
+            quantityInBatchAtReportDate -= t.quantity; // Normal outflow
+          }
         }
-        // IN transactions are part of initialQuantity if transaction is at batch.createdAt
-        // If IN transaction is after batch.createdAt but before/on reportDate (e.g. adjustment_increase),
-        // this model currently doesn't support separate 'IN' types for quantity increase post-initial.
-        // For this system, 'IN' is primarily for initial batch.
       });
       
       quantityInBatchAtReportDate = Math.max(0, quantityInBatchAtReportDate);
       
-      // Batch should not have expired before the report date to be counted
       if (quantityInBatchAtReportDate > 0 && !isBefore(parseISO(batch.expiryDate), reportDate) ) {
         totalValueForDate += quantityInBatchAtReportDate * batch.unitCost;
         totalQuantityForDate += quantityInBatchAtReportDate;
@@ -124,7 +121,7 @@ function calculateHistoricalStockData(
 
 
 export function StockValuationChartView() {
-  const { products, batches, transactions } = useInventory();
+  const { products, batches, transactions, getProductById } = useInventory();
   const activeProducts = useMemo(() => products.filter(p => !p.isArchived), [products]);
 
   const [hasMounted, setHasMounted] = useState(false);
@@ -177,17 +174,20 @@ export function StockValuationChartView() {
   useEffect(() => {
     if (hasMounted && selectedProductId) {
       handleGenerateChart();
-    } else if (hasMounted && !selectedProductId) {
+    } else if (hasMounted && !selectedProductId && activeProducts.length > 0) {
+       setError("请选择一个产品以查看图表。");
+       setChartData(null);
+    } else if (hasMounted && activeProducts.length === 0) {
+      setError("无可用产品进行分析。");
       setChartData(null);
-      setError(activeProducts.length > 0 ? "请选择一个产品以查看图表。" : "无可用产品进行分析。");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMounted, selectedProductId, selectedTimeScale, batches, transactions]);
+  }, [hasMounted, selectedProductId, selectedTimeScale]); // Removed batches, transactions from deps to avoid re-render on every transaction
 
 
   const chartConfig = {
     stockValue: {
-      label: "库存价值 (¥)", // Updated currency
+      label: "库存价值 (¥)",
       color: "hsl(var(--chart-1))",
     },
     quantity: {
@@ -196,7 +196,7 @@ export function StockValuationChartView() {
     },
   } satisfies ChartConfig;
   
-  const selectedProduct = activeProducts.find(p => p.id === selectedProductId);
+  const selectedProduct = getProductById(selectedProductId || "");
   const selectedProductName = selectedProduct?.name || "";
   const selectedProductUnit = selectedProduct?.unit || "";
 
@@ -242,7 +242,7 @@ export function StockValuationChartView() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Select 
             onValueChange={setSelectedProductId} 
-            value={selectedProductId} // `undefined` will show placeholder
+            value={selectedProductId || undefined}
             disabled={activeProducts.length === 0 || isLoading}
           >
             <SelectTrigger>
@@ -375,6 +375,3 @@ export function StockValuationChartView() {
     </Card>
   );
 }
-
-
-    

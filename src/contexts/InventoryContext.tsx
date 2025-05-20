@@ -117,7 +117,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       notes: `批次 ${newBatch.id} 的初始入库`,
     };
     setTransactions(prev => [...prev, newTransaction]);
-    toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ${newBatch.unitCost.toFixed(2)}` });
+    toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ¥${newBatch.unitCost.toFixed(2)}` });
   };
 
   const recordOutflowFromSpecificBatch = (productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
@@ -134,31 +134,25 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const batch = batches[batchIndex];
-    // If quantityToOutflow is positive, ensure it doesn't exceed current stock
     if (quantityToOutflow > 0 && batch.currentQuantity < quantityToOutflow) {
       toast({ title: "错误", description: `所选批次的库存不足。可用: ${batch.currentQuantity}`, variant: "destructive" });
       return;
     }
     
-    // If quantityToOutflow is negative, it means we are adding back to stock (correction)
-    // The currentQuantity check above handles positive outflow.
-    // For negative outflow, there's no "not enough stock" concept in the same way.
-
     const updatedBatches = [...batches];
-    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow }; // quantityToOutflow is subtracted. If negative, it adds.
+    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow }; 
     
     const newTransaction: Transaction = {
       id: nanoid(),
       productId: product.id,
       productName: product.name,
       batchId: batch.id,
-      type: 'OUT', // Still 'OUT' type, reason clarifies if it's a correction
-      quantity: Math.abs(quantityToOutflow), // Store absolute quantity for transaction log consistency
+      type: 'OUT', 
+      quantity: Math.abs(quantityToOutflow), 
       timestamp: formatISO(new Date()),
       reason,
       notes,
       unitCostAtTransaction: batch.unitCost,
-      // Add a field to transaction if the outflow was negative to indicate correction direction
       isCorrectionIncrease: quantityToOutflow < 0 ? true : undefined,
     };
 
@@ -297,4 +291,3 @@ export const useInventory = () => {
   }
   return context;
 };
-
