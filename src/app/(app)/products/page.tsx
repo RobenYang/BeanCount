@@ -15,7 +15,7 @@ import NextImage from "next/image";
 import { useState, Fragment } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
-import { EditProductForm } from "@/components/forms/EditProductForm"; // Import EditProductForm
+import { EditProductForm } from "@/components/forms/EditProductForm";
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -107,12 +107,12 @@ function ProductRow({
     product, 
     onArchive, 
     onUnarchive,
-    onEdit // Add onEdit prop
+    onEdit
 }: { 
     product: Product, 
     onArchive: (id: string) => void, 
     onUnarchive: (id: string) => void,
-    onEdit: (product: Product) => void // Define onEdit prop type
+    onEdit: (product: Product) => void
 }) {
   const { getProductStockDetails, appSettings } = useInventory();
   const { totalQuantity, totalValue, batches } = getProductStockDetails(product.id);
@@ -164,7 +164,7 @@ function ProductRow({
       </TableCell>
       <TableCell>{product.unit}</TableCell>
       <TableCell>{product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A'}</TableCell>
-      <TableCell className="text-right">{product.lowStockThreshold}</TableCell> {/* Display lowStockThreshold */}
+      <TableCell className="text-right">{product.lowStockThreshold}</TableCell>
       <TableCell className="text-right">{totalQuantity}</TableCell>
       <TableCell className="text-right">¥{totalValue.toFixed(2)}</TableCell>
       <TableCell>{product.createdAt ? format(parseISO(product.createdAt), "yyyy年MM月dd日 HH:mm", {locale: zhCN}) : 'N/A'}</TableCell>
@@ -189,14 +189,14 @@ function ProductRow({
   
   const detailsRow = isExpanded ? (
     <TableRow key={`${product.id}-details`}>
-      <TableCell colSpan={9}> {/* Adjusted colSpan */}
+      <TableCell colSpan={9}>
         <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
       </TableCell>
     </TableRow>
   ) : null;
 
   return (
-    <Fragment>
+    <>
       {mainRow}
       {detailsRow}
       {isImageModalOpen && product.imageUrl && (
@@ -207,7 +207,7 @@ function ProductRow({
           productName={product.name}
         />
       )}
-    </Fragment>
+    </>
   );
 }
 
@@ -258,11 +258,11 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
-                    <TableHead className="text-right">预警阈值</TableHead> {/* New column */}
+                    <TableHead className="text-right">预警阈值</TableHead>
                     <TableHead className="text-right">库存数量</TableHead>
                     <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
-                    <TableHead className="text-right w-[120px]">操作</TableHead> {/* Adjusted width */}
+                    <TableHead className="text-right w-[120px]">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -297,11 +297,11 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
-                    <TableHead className="text-right">预警阈值</TableHead> {/* New column */}
+                    <TableHead className="text-right">预警阈值</TableHead>
                     <TableHead className="text-right">库存数量</TableHead>
                     <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
-                    <TableHead className="text-right w-[120px]">操作</TableHead> {/* Adjusted width */}
+                    <TableHead className="text-right w-[120px]">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
