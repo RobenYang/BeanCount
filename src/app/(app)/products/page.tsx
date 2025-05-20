@@ -7,15 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil } from "lucide-react";
+import { PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, Pencil, Search as SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
-import { useState, Fragment } from "react";
+import { useState, Fragment, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
+import { Input } from "@/components/ui/input";
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -216,11 +217,27 @@ export default function ProductsPage() {
   const [activeTab, setActiveTab] = useState("active");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  const activeProducts = products.filter(p => !p.isArchived);
-  const archivedProducts = products.filter(p => p.isArchived);
+  const filteredProducts = useMemo(() => {
+    if (!searchTerm) {
+      return products; 
+    }
+    const lowercasedSearchTerm = searchTerm.toLowerCase();
+    return products.filter(product =>
+      product.name.toLowerCase().includes(lowercasedSearchTerm)
+    );
+  }, [products, searchTerm]);
 
-  const productsToDisplay = activeTab === "active" ? activeProducts : archivedProducts;
+  const productsToDisplayActive = useMemo(() => {
+    return filteredProducts.filter(p => !p.isArchived);
+  }, [filteredProducts]);
+
+  const productsToDisplayArchived = useMemo(() => {
+    return filteredProducts.filter(p => p.isArchived);
+  }, [filteredProducts]);
+
+  const productsToDisplay = activeTab === "active" ? productsToDisplayActive : productsToDisplayArchived;
 
   const handleOpenEditModal = (product: Product) => {
     setProductToEdit(product);
@@ -243,10 +260,21 @@ export default function ProductsPage() {
         </Button>
       </div>
 
+      <div className="relative">
+        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="搜索产品名称..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full pl-10" 
+        />
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="active">活动 ({activeProducts.length})</TabsTrigger>
-          <TabsTrigger value="archived">已归档 ({archivedProducts.length})</TabsTrigger>
+          <TabsTrigger value="active">活动 ({productsToDisplayActive.length})</TabsTrigger>
+          <TabsTrigger value="archived">已归档 ({productsToDisplayArchived.length})</TabsTrigger>
         </TabsList>
         <TabsContent value="active">
           {productsToDisplay.length > 0 ? (
@@ -276,13 +304,24 @@ export default function ProductsPage() {
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
                 <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold">无活动产品</h3>
-                <p className="text-muted-foreground mb-4">
-                  添加一些产品开始吧！
-                </p>
-                <Button asChild>
-                  <Link href="/products/add">添加新产品</Link>
-                </Button>
+                {searchTerm ? (
+                  <>
+                    <h3 className="text-xl font-semibold">未找到产品</h3>
+                    <p className="text-muted-foreground mb-4">
+                      没有活动产品匹配搜索词 “{searchTerm}”。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-xl font-semibold">无活动产品</h3>
+                    <p className="text-muted-foreground mb-4">
+                      添加一些产品开始吧！
+                    </p>
+                    <Button asChild>
+                      <Link href="/products/add">添加新产品</Link>
+                    </Button>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
@@ -315,10 +354,21 @@ export default function ProductsPage() {
              <Card>
               <CardContent className="pt-6 flex flex-col items-center justify-center min-h-[200px] text-center">
                 <PackageSearch className="h-16 w-16 text-muted-foreground mb-4" />
-                <h3 className="text-xl font-semibold">无已归档产品</h3>
-                <p className="text-muted-foreground mb-4">
-                  您归档的产品将显示在此处。
-                </p>
+                 {searchTerm ? (
+                  <>
+                    <h3 className="text-xl font-semibold">未找到产品</h3>
+                    <p className="text-muted-foreground mb-4">
+                      没有已归档产品匹配搜索词 “{searchTerm}”。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-xl font-semibold">无已归档产品</h3>
+                    <p className="text-muted-foreground mb-4">
+                      您归档的产品将显示在此处。
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
@@ -332,3 +382,5 @@ export default function ProductsPage() {
     </div>
   );
 }
+
+    
