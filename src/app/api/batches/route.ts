@@ -4,42 +4,65 @@ import { NextResponse } from 'next/server';
 import type { Batch, Product } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import { addDays, formatISO, parseISO } from 'date-fns';
+import { sql } from '@vercel/postgres';
 
-// In-memory store for demonstration purposes ONLY for batches.
-// Data will be lost if the server restarts or scales.
-// This should be replaced with a real database.
-let batchesStore: Batch[] = [
-    // Initial sample batches can be added here if needed,
-    // but it's often better to let the client POST them after products are loaded.
-];
+// In-memory store REMOVED. Data is now managed by Vercel Postgres.
 
-// Placeholder: In a real app, you'd fetch products from a DB or product service.
-// For now, we'll use a simplified product list. This should ideally be shared
-// with the products API or fetched from the same source.
-const getProductById_API_INTERNAL = (productId: string): Partial<Product> | undefined => {
-    // This is a simplified placeholder. In a real scenario, you would query your product database.
-    // For now, we'll simulate a few known products for batch creation.
-    const knownProducts: Partial<Product>[] = [
-        { id: 'api_sample_prod_1', name: '阿拉比卡咖啡豆 (来自API)', category: 'INGREDIENT', unit: 'kg', shelfLifeDays: 365 },
-        { id: 'api_sample_prod_2', name: '全脂牛奶 (来自API)', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7 },
-        { id: 'api_sample_prod_3', name: '马克杯 (来自API)', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null },
-    ];
-    return knownProducts.find(p => p.id === productId);
+// Helper function to fetch product details from the 'products' table
+async function getProductFromDB(productId: string): Promise<Partial<Product> | null> {
+  try {
+    const { rows } = await sql`
+      SELECT id, name, category, unit, shelf_life_days AS "shelfLifeDays" 
+      FROM products 
+      WHERE id = ${productId};
+    `;
+    if (rows.length > 0) {
+      return rows[0] as Partial<Product>;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching product from DB in batches API:', error);
+    return null; // Or rethrow, depending on desired error handling
+  }
 }
 
 
 export async function GET() {
-  // Simulate a short delay
-  await new Promise(resolve => setTimeout(resolve, 400));
-  return NextResponse.json(batchesStore);
+  try {
+    const { rows } = await sql`
+      SELECT 
+        id, 
+        product_id AS "productId", 
+        product_name AS "productName", 
+        production_date AS "productionDate", 
+        expiry_date AS "expiryDate", 
+        initial_quantity AS "initialQuantity", 
+        current_quantity AS "currentQuantity", 
+        unit_cost AS "unitCost", 
+        created_at AS "createdAt"
+      FROM batches 
+      ORDER BY created_at DESC;
+    `;
+    // Ensure date fields are correctly formatted as ISO strings if they aren't already
+    const formattedRows = rows.map(row => ({
+      ...row,
+      productionDate: row.productionDate ? formatISO(new Date(row.productionDate)) : null,
+      expiryDate: row.expiryDate ? formatISO(new Date(row.expiryDate)) : null,
+      createdAt: row.createdAt ? formatISO(new Date(row.createdAt)) : null,
+    }));
+    return NextResponse.json(formattedRows);
+  } catch (error) {
+    console.error('Failed to fetch batches from Postgres:', error);
+    return NextResponse.json({ error: 'Failed to fetch batches' }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
     const batchData = await request.json() as Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null };
     
-    const product = getProductById_API_INTERNAL(batchData.productId);
-    if (!product || !product.name || !product.category || !product.shelfLifeDays === undefined ) { // ensure essential product props exist
+    const product = await getProductFromDB(batchData.productId);
+    if (!product || !product.name || !product.category || product.shelfLifeDays === undefined) {
       return NextResponse.json({ error: 'Associated product not found or product data incomplete for batch creation' }, { status: 400 });
     }
 
@@ -50,47 +73,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Initial quantity must be greater than 0' }, { status: 400 });
     }
 
-    const batchCreatedAt = formatISO(new Date());
-    let productionDateIso: string | null = null;
-    let expiryDateIso: string | null = null;
+    const batchId = nanoid();
+    const batchCreatedAt = new Date(); // Use Date object for SQL
+    let productionDateForDb: Date | null = null;
+    let expiryDateForDb: Date | null = null;
 
     if (product.category === 'INGREDIENT') {
       if (!batchData.productionDate) {
         return NextResponse.json({ error: 'Production date is required for ingredient products' }, { status: 400 });
       }
       try {
-        productionDateIso = formatISO(parseISO(batchData.productionDate)); // Validate and reformat
+        productionDateForDb = parseISO(batchData.productionDate);
         if (product.shelfLifeDays && product.shelfLifeDays > 0) {
-          expiryDateIso = formatISO(addDays(parseISO(batchData.productionDate), product.shelfLifeDays));
+          expiryDateForDb = addDays(productionDateForDb, product.shelfLifeDays);
         }
       } catch (e) {
         return NextResponse.json({ error: 'Invalid production date format' }, { status: 400 });
       }
     } else { // NON_INGREDIENT
-      productionDateIso = batchData.productionDate ? formatISO(parseISO(batchData.productionDate)) : batchCreatedAt;
-      expiryDateIso = null;
+      productionDateForDb = batchData.productionDate ? parseISO(batchData.productionDate) : batchCreatedAt;
+      // expiryDate remains null for NON_INGREDIENT
     }
 
+    await sql`
+      INSERT INTO batches (
+        id, product_id, product_name, 
+        production_date, expiry_date, 
+        initial_quantity, current_quantity, 
+        unit_cost, created_at
+      )
+      VALUES (
+        ${batchId}, ${batchData.productId}, ${product.name},
+        ${productionDateForDb ? productionDateForDb.toISOString() : null}, 
+        ${expiryDateForDb ? expiryDateForDb.toISOString() : null},
+        ${batchData.initialQuantity}, ${batchData.initialQuantity}, 
+        ${batchData.unitCost}, ${batchCreatedAt.toISOString()}
+      );
+    `;
+    
     const newBatch: Batch = {
-      id: nanoid(),
+      id: batchId,
       productId: batchData.productId,
-      productName: product.name, // Denormalize product name
-      productionDate: productionDateIso,
-      expiryDate: expiryDateIso,
+      productName: product.name,
+      productionDate: productionDateForDb ? formatISO(productionDateForDb) : null,
+      expiryDate: expiryDateForDb ? formatISO(expiryDateForDb) : null,
       initialQuantity: batchData.initialQuantity,
-      currentQuantity: batchData.initialQuantity, // Initially current quantity is the same as initial
+      currentQuantity: batchData.initialQuantity,
       unitCost: batchData.unitCost,
-      createdAt: batchCreatedAt,
+      createdAt: formatISO(batchCreatedAt),
     };
     
-    batchesStore.push(newBatch);
-    
-    // Simulate a short delay
-    await new Promise(resolve => setTimeout(resolve, 200));
     return NextResponse.json(newBatch, { status: 201 });
 
   } catch (error) {
-    console.error('Failed to create batch via API:', error);
+    console.error('Failed to create batch in Postgres:', error);
     return NextResponse.json({ error: 'Failed to create batch' }, { status: 500 });
   }
 }
