@@ -16,7 +16,7 @@ interface InventoryContextType {
   unarchiveProduct: (productId: string) => void;
   getProductById: (id: string) => Product | undefined;
   addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => void;
-  recordOutflow: (productId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
+  recordOutflowFromSpecificBatch: (productId: string, batchId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
   getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: Batch[] };
 }
@@ -92,7 +92,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     const productionDate = new Date(batchData.productionDate);
     const expiryDate = addDays(productionDate, product.shelfLifeDays);
-    const batchCreatedAt = formatISO(new Date()); // Actual creation time for new batches
+    const batchCreatedAt = formatISO(new Date()); 
 
     const newBatch: Batch = {
       ...batchData,
@@ -112,7 +112,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       batchId: newBatch.id,
       type: 'IN',
       quantity: newBatch.initialQuantity,
-      timestamp: batchCreatedAt, // Transaction timestamp is when it's recorded
+      timestamp: batchCreatedAt, 
       unitCostAtTransaction: newBatch.unitCost,
       notes: `批次 ${newBatch.id} 的初始入库`,
     };
@@ -120,54 +120,46 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ${newBatch.unitCost.toFixed(2)}` });
   };
 
-  const recordOutflow = (productId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
+  const recordOutflowFromSpecificBatch = (productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
     const product = getProductById(productId);
     if (!product) {
       toast({ title: "错误", description: "未找到产品。", variant: "destructive" });
       return;
     }
 
-    let remainingQuantityToOutflow = quantityToOutflow;
-    const productBatches = batches
-      .filter(b => b.productId === productId && b.currentQuantity > 0)
-      .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime()); 
+    const batchIndex = batches.findIndex(b => b.id === batchId && b.productId === productId);
+    if (batchIndex === -1) {
+      toast({ title: "错误", description: "未找到指定的批次。", variant: "destructive" });
+      return;
+    }
 
-    if (productBatches.reduce((sum, b) => sum + b.currentQuantity, 0) < quantityToOutflow) {
-      toast({ title: "错误", description: `"${product.name}" 库存不足。可用: ${productBatches.reduce((sum, b) => sum + b.currentQuantity, 0)}`, variant: "destructive" });
+    const batch = batches[batchIndex];
+    if (batch.currentQuantity < quantityToOutflow) {
+      toast({ title: "错误", description: `所选批次的库存不足。可用: ${batch.currentQuantity}`, variant: "destructive" });
       return;
     }
 
     const updatedBatches = [...batches];
-    const newTransactions: Transaction[] = [];
-
-    for (const batch of productBatches) {
-      if (remainingQuantityToOutflow <= 0) break;
-
-      const batchIndex = updatedBatches.findIndex(b => b.id === batch.id);
-      if (batchIndex === -1) continue;
-
-      const outflowFromThisBatch = Math.min(batch.currentQuantity, remainingQuantityToOutflow);
-      updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - outflowFromThisBatch };
-      
-      newTransactions.push({
-        id: nanoid(),
-        productId: product.id,
-        productName: product.name,
-        batchId: batch.id,
-        type: 'OUT',
-        quantity: outflowFromThisBatch,
-        timestamp: formatISO(new Date()),
-        reason,
-        notes,
-        unitCostAtTransaction: batch.unitCost,
-      });
-      remainingQuantityToOutflow -= outflowFromThisBatch;
-    }
+    updatedBatches[batchIndex] = { ...batch, currentQuantity: batch.currentQuantity - quantityToOutflow };
+    
+    const newTransaction: Transaction = {
+      id: nanoid(),
+      productId: product.id,
+      productName: product.name,
+      batchId: batch.id,
+      type: 'OUT',
+      quantity: quantityToOutflow,
+      timestamp: formatISO(new Date()),
+      reason,
+      notes,
+      unitCostAtTransaction: batch.unitCost,
+    };
 
     setBatches(updatedBatches);
-    setTransactions(prev => [...prev, ...newTransactions]);
-    toast({ title: "成功", description: `"${product.name}" 的 ${quantityToOutflow} 件库存出库已记录。` });
+    setTransactions(prev => [...prev, newTransaction]);
+    toast({ title: "成功", description: `从批次 ${batch.id} 中为 "${product.name}" 出库 ${quantityToOutflow} 件已记录。` });
   };
+
 
   const getBatchesByProductId = (productId: string) => {
     return batches.filter(b => b.productId === productId);
@@ -195,21 +187,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       const createdProducts: Product[] = sampleProductsData.map(p => ({
         ...p,
         id: nanoid(),
-        createdAt: formatISO(addDays(new Date(), -180)), // Sample products created ~6 months ago
+        createdAt: formatISO(addDays(new Date(), -180)), 
         isArchived: false,
       }));
       setProducts(createdProducts);
 
       const sampleBatchesData = [
-        // product 0, batch 1: created ~30 days ago
         { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -30, initialQuantity: 10, currentQuantity: 8, unitCost: 15 },
-        // product 0, batch 2: created ~60 days ago
         { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -60, initialQuantity: 5, currentQuantity: 5, unitCost: 14.5 },
-        // product 1, batch 1: created ~2 days ago
         { productId: createdProducts[1].id, productName: createdProducts[1].name, productionDateOffset: -2, initialQuantity: 20, currentQuantity: 15, unitCost: 1.2 },
-         // product 2, batch 1: created ~90 days ago
         { productId: createdProducts[2].id, productName: createdProducts[2].name, productionDateOffset: -90, initialQuantity: 12, currentQuantity: 12, unitCost: 8.0 },
-
       ];
 
       const createdBatches: Batch[] = [];
@@ -220,7 +207,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         if (!product) throw new Error("Sample product not found for batch");
         
         const productionDate = addDays(new Date(), b_data.productionDateOffset);
-        const batchCreatedAt = formatISO(productionDate); // Align createdAt with production for historical sample data
+        const batchCreatedAt = formatISO(productionDate); 
 
         const newBatch: Batch = {
           id: nanoid(),
@@ -229,7 +216,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           productionDate: formatISO(productionDate),
           expiryDate: formatISO(addDays(productionDate, product.shelfLifeDays)),
           initialQuantity: b_data.initialQuantity,
-          currentQuantity: b_data.currentQuantity, // currentQuantity reflects subsequent transactions
+          currentQuantity: b_data.currentQuantity, 
           unitCost: b_data.unitCost,
           createdAt: batchCreatedAt, 
         };
@@ -242,12 +229,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
           batchId: newBatch.id,
           type: 'IN' as TransactionType,
           quantity: newBatch.initialQuantity,
-          timestamp: batchCreatedAt, // IN transaction at time of (sample) creation
+          timestamp: batchCreatedAt, 
           unitCostAtTransaction: newBatch.unitCost,
           notes: '初始样本数据 - 入库'
         });
 
-        // If currentQuantity is less than initialQuantity, create an OUT transaction
         if (b_data.currentQuantity < b_data.initialQuantity) {
           const quantityOut = b_data.initialQuantity - b_data.currentQuantity;
           createdTransactions.push({
@@ -257,7 +243,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
             batchId: newBatch.id,
             type: 'OUT' as TransactionType,
             quantity: quantityOut,
-            // Make transaction date between batch creation and today for realism
             timestamp: formatISO(addDays(productionDate, Math.floor(Math.abs(b_data.productionDateOffset) / 2) + 1 )), 
             reason: 'SALE' as OutflowReasonValue,
             unitCostAtTransaction: newBatch.unitCost,
@@ -284,7 +269,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       unarchiveProduct,
       getProductById,
       addBatch,
-      recordOutflow,
+      recordOutflowFromSpecificBatch,
       getBatchesByProductId,
       getProductStockDetails
     }}>
