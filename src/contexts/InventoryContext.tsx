@@ -18,7 +18,7 @@ interface InventoryContextType {
   addBatch: (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'>) => void;
   recordOutflow: (productId: string, quantity: number, reason: OutflowReasonValue, notes?: string) => void;
   getBatchesByProductId: (productId: string) => Batch[];
-  getProductStockDetails: (productId: string) => { totalQuantity: number; batches: Batch[] };
+  getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: Batch[] };
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -85,6 +85,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: "错误", description: "未找到此批次的产品。", variant: "destructive" });
       return;
     }
+    if (batchData.unitCost === undefined || batchData.unitCost < 0) {
+      toast({ title: "错误", description: "必须为入库批次提供有效的单位成本。", variant: "destructive"});
+      return;
+    }
 
     const productionDate = new Date(batchData.productionDate);
     const expiryDate = addDays(productionDate, product.shelfLifeDays);
@@ -112,7 +116,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       notes: `批次 ${newBatch.id} 的初始入库`,
     };
     setTransactions(prev => [...prev, newTransaction]);
-    toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}` });
+    toast({ title: "成功", description: `"${product.name}" 的批次已添加。数量: ${newBatch.initialQuantity}，单位成本: ${newBatch.unitCost.toFixed(2)}` });
   };
 
   const recordOutflow = (productId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
@@ -171,51 +175,88 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const getProductStockDetails = (productId: string) => {
     const productBatches = getBatchesByProductId(productId).filter(b => b.currentQuantity > 0);
     const totalQuantity = productBatches.reduce((sum, batch) => sum + batch.currentQuantity, 0);
-    return { totalQuantity, batches: productBatches };
+    const totalValue = productBatches.reduce((sum, batch) => sum + (batch.currentQuantity * batch.unitCost), 0);
+    return { totalQuantity, totalValue, batches: productBatches };
   };
   
   useEffect(() => {
-    if (products.length === 0 && batches.length === 0) {
-      const sampleProducts = [
-        { id: 'coffee-beans-arabica', name: '阿拉比卡咖啡豆', category: '咖啡', unit: 'kg', shelfLifeDays: 365, createdAt: formatISO(new Date()), isArchived: false },
-        { id: 'milk-full-cream', name: '全脂牛奶', category: '乳制品', unit: '升', shelfLifeDays: 7, createdAt: formatISO(new Date()), isArchived: false },
-        { id: 'syrup-vanilla', name: '香草糖浆', category: '糖浆', unit: '瓶', shelfLifeDays: 730, createdAt: formatISO(new Date()), isArchived: false },
-      ];
-      setProducts(sampleProducts);
+    // Initialize with sample data only if all relevant localStorage keys are empty
+    const productsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_products_zh');
+    const batchesExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_batches_zh');
+    const transactionsExist = typeof window !== 'undefined' && window.localStorage.getItem('inventory_transactions_zh');
 
-      const sampleBatches = [
-        { id: nanoid(), productId: 'coffee-beans-arabica', productName: '阿拉比卡咖啡豆', productionDate: formatISO(addDays(new Date(), -30)), expiryDate: formatISO(addDays(new Date(), 335)), initialQuantity: 10, currentQuantity: 8, unitCost: 15, createdAt: formatISO(new Date()) },
-        { id: nanoid(), productId: 'coffee-beans-arabica', productName: '阿拉比卡咖啡豆', productionDate: formatISO(addDays(new Date(), -60)), expiryDate: formatISO(addDays(new Date(), 305)), initialQuantity: 5, currentQuantity: 5, unitCost: 14.5, createdAt: formatISO(new Date()) },
-        { id: nanoid(), productId: 'milk-full-cream', productName: '全脂牛奶', productionDate: formatISO(addDays(new Date(), -2)), expiryDate: formatISO(addDays(new Date(), 5)), initialQuantity: 20, currentQuantity: 15, unitCost: 1.2, createdAt: formatISO(new Date()) },
+    if (!productsExist && !batchesExist && !transactionsExist) {
+      const sampleProductsData = [
+        { name: '阿拉比卡咖啡豆', category: '咖啡', unit: 'kg', shelfLifeDays: 365 },
+        { name: '全脂牛奶', category: '乳制品', unit: '升', shelfLifeDays: 7 },
+        { name: '香草糖浆', category: '糖浆', unit: '瓶', shelfLifeDays: 730 },
       ];
-      setBatches(sampleBatches);
       
-      const sampleTransactions: Transaction[] = sampleBatches.map(b => ({
+      const createdProducts: Product[] = sampleProductsData.map(p => ({
+        ...p,
         id: nanoid(),
-        productId: b.productId,
-        productName: b.productName,
-        batchId: b.id,
-        type: 'IN' as TransactionType,
-        quantity: b.initialQuantity,
-        timestamp: b.createdAt,
-        unitCostAtTransaction: b.unitCost,
-        notes: '初始样本数据'
+        createdAt: formatISO(new Date()),
+        isArchived: false,
       }));
-      if (sampleBatches[0]) {
-        sampleTransactions.push({
+      setProducts(createdProducts);
+
+      const sampleBatchesData = [
+        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -30, expiryOffset: 335, initialQuantity: 10, currentQuantity: 8, unitCost: 15 },
+        { productId: createdProducts[0].id, productName: createdProducts[0].name, productionDateOffset: -60, expiryOffset: 305, initialQuantity: 5, currentQuantity: 5, unitCost: 14.5 },
+        { productId: createdProducts[1].id, productName: createdProducts[1].name, productionDateOffset: -2, expiryOffset: 5, initialQuantity: 20, currentQuantity: 15, unitCost: 1.2 },
+      ];
+
+      const createdBatches: Batch[] = sampleBatchesData.map(b => {
+        const product = createdProducts.find(p => p.id === b.productId);
+        if (!product) throw new Error("Sample product not found for batch");
+        const productionDate = addDays(new Date(), b.productionDateOffset);
+        return {
           id: nanoid(),
-          productId: sampleBatches[0].productId,
-          productName: sampleBatches[0].productName,
-          batchId: sampleBatches[0].id,
-          type: 'OUT' as TransactionType,
-          quantity: 2, 
-          timestamp: formatISO(addDays(new Date(), -1)),
-          reason: 'SALE' as OutflowReasonValue,
-          unitCostAtTransaction: sampleBatches[0].unitCost,
-          notes: '示例销售'
+          productId: b.productId,
+          productName: b.productName,
+          productionDate: formatISO(productionDate),
+          expiryDate: formatISO(addDays(productionDate, product.shelfLifeDays)), // Recalculate based on product's shelfLife
+          initialQuantity: b.initialQuantity,
+          currentQuantity: b.currentQuantity,
+          unitCost: b.unitCost,
+          createdAt: formatISO(new Date()),
+        };
+      });
+      setBatches(createdBatches);
+      
+      const createdTransactions: Transaction[] = [];
+      createdBatches.forEach(b => {
+        createdTransactions.push({
+          id: nanoid(),
+          productId: b.productId,
+          productName: b.productName,
+          batchId: b.id,
+          type: 'IN' as TransactionType,
+          quantity: b.initialQuantity,
+          timestamp: b.createdAt,
+          unitCostAtTransaction: b.unitCost,
+          notes: '初始样本数据'
         });
+      });
+
+      // Example outflow transaction for the first batch of the first product
+      if (createdBatches.length > 0 && createdBatches[0].initialQuantity > 2) {
+         const firstBatch = createdBatches[0];
+         createdTransactions.push({
+            id: nanoid(),
+            productId: firstBatch.productId,
+            productName: firstBatch.productName,
+            batchId: firstBatch.id,
+            type: 'OUT' as TransactionType,
+            quantity: 2, 
+            timestamp: formatISO(addDays(new Date(), -1)), // Yesterday
+            reason: 'SALE' as OutflowReasonValue,
+            unitCostAtTransaction: firstBatch.unitCost,
+            notes: '示例销售'
+         });
       }
-      setTransactions(sampleTransactions);
+      setTransactions(createdTransactions);
+      console.log("Sample data initialized.");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -247,3 +288,4 @@ export const useInventory = () => {
   }
   return context;
 };
+

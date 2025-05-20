@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Archive, Edit, Undo, PackageSearch, Package } from "lucide-react";
+import { PlusCircle, Archive, Edit, Undo, PackageSearch, Package, DollarSign } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import Image from "next/image";
@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onArchive: (id: string) => void, onUnarchive: (id: string) => void }) {
   const { getProductStockDetails } = useInventory();
-  const { totalQuantity } = getProductStockDetails(product.id);
+  const { totalQuantity, totalValue } = getProductStockDetails(product.id);
 
   return (
     <TableRow>
@@ -39,6 +39,7 @@ function ProductRow({ product, onArchive, onUnarchive }: { product: Product, onA
       <TableCell>{product.unit}</TableCell>
       <TableCell>{product.shelfLifeDays} 天</TableCell>
       <TableCell className="text-right">{totalQuantity}</TableCell>
+      <TableCell className="text-right">${totalValue.toFixed(2)}</TableCell>
       <TableCell>{format(parseISO(product.createdAt), "yyyy年MM月dd日")}</TableCell>
       <TableCell className="text-right">
         {product.isArchived ? (
@@ -96,7 +97,8 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
-                    <TableHead className="text-right">库存</TableHead>
+                    <TableHead className="text-right">库存数量</TableHead>
+                    <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -134,7 +136,8 @@ export default function ProductsPage() {
                     <TableHead>名称</TableHead>
                     <TableHead>单位</TableHead>
                     <TableHead>保质期</TableHead>
-                    <TableHead className="text-right">库存</TableHead>
+                    <TableHead className="text-right">库存数量</TableHead>
+                     <TableHead className="text-right">库存总价值</TableHead>
                     <TableHead>创建日期</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>

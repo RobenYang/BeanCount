@@ -28,7 +28,7 @@ const stockIntakeFormSchema = z.object({
   productId: z.string().min(1, "必须选择产品。"),
   productionDate: z.date({ required_error: "生产日期为必填项。" }),
   initialQuantity: z.coerce.number().positive("数量必须是正数。"),
-  unitCost: z.coerce.number().min(0, "单位成本不能为负。"),
+  unitCost: z.coerce.number().min(0, "单位成本不能为负且为必填项。"), // Made more explicit
 });
 
 type StockIntakeFormValues = z.infer<typeof stockIntakeFormSchema>;
@@ -42,20 +42,28 @@ export function StockIntakeForm() {
     defaultValues: {
       productId: "",
       initialQuantity: 0,
-      unitCost: 0,
+      unitCost: undefined, // Default to undefined to ensure validation triggers if not filled
     },
   });
 
   function onSubmit(data: StockIntakeFormValues) {
     const { productId, productionDate, initialQuantity, unitCost } = data;
+     if (unitCost === undefined || unitCost < 0) { // Explicit check, though Zod should catch it
+      form.setError("unitCost", { type: "manual", message: "单位成本为必填项且不能为负。" });
+      return;
+    }
     addBatch({ 
       productId, 
       productionDate: productionDate.toISOString(), 
       initialQuantity, 
       unitCost 
     });
-    form.reset();
-    form.setValue("productionDate", undefined as any); 
+    form.reset({ // Reset with specific undefined for date to clear calendar
+        productId: "",
+        initialQuantity: 0,
+        unitCost: undefined,
+        productionDate: undefined as any 
+    });
   }
 
   return (
@@ -75,7 +83,7 @@ export function StockIntakeForm() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>产品</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value || ""}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="选择一个产品" />
@@ -156,7 +164,7 @@ export function StockIntakeForm() {
               name="unitCost"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>单位成本</FormLabel>
+                  <FormLabel>单位成本 (¥)</FormLabel>
                   <FormControl>
                     <Input type="number" step="0.01" placeholder="例如: 15.50" {...field} />
                   </FormControl>
