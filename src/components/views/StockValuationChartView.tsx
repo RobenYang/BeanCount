@@ -3,7 +3,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
-import type { Product, Batch, Transaction } from "@/lib/types";
+import type { Product, Batch, Transaction, ChartDataPoint, ChartTimeScaleValue } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,6 +19,7 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { format, subDays, eachDayOfInterval, startOfWeek, startOfMonth, parseISO, endOfDay, isWithinInterval, addMonths, subMonths, subWeeks, addWeeks, isAfter, isBefore } from "date-fns";
 import { zhCN } from 'date-fns/locale';
+import { Skeleton } from "@/components/ui/skeleton";
 
 const CHART_TIMESCALE_OPTIONS = [
   { value: 'LAST_7_DAYS_DAILY', label: '每日 (过去7天)' },
@@ -27,15 +28,9 @@ const CHART_TIMESCALE_OPTIONS = [
   { value: 'LAST_12_MONTHS_MONTHLY', label: '每月 (过去12个月)' },
 ];
 
-interface ChartDataPoint {
-  date: string; // Formatted date string for X-axis
-  stockValue: number; // Stock value for Y-axis (based on intake cost)
-  quantity: number; // Stock quantity for Y-axis
-}
-
 function calculateHistoricalStockData(
   productId: string,
-  timeScale: string,
+  timeScale: ChartTimeScaleValue, // Use the specific type
   allBatches: Batch[],
   allTransactions: Transaction[]
 ): ChartDataPoint[] {
@@ -59,7 +54,9 @@ function calculateHistoricalStockData(
       while (currentDateW <= today) {
           reportDates.push(endOfDay(currentDateW));
           currentDateW = addWeeks(currentDateW, 1);
-          if (reportDates.length > 15) break; 
+          if (reportDates.length > 15 && reportDates.length < 20) { // Allow slightly more for weekly over 3 months
+            // Break if too many points to avoid performance issues, adjust limit as needed
+          } else if (reportDates.length >=20) break;
       }
       break;
     case 'LAST_12_MONTHS_MONTHLY':
@@ -68,7 +65,7 @@ function calculateHistoricalStockData(
       while (currentDateM <= today) {
           reportDates.push(endOfDay(currentDateM));
           currentDateM = addMonths(currentDateM, 1);
-          if (reportDates.length > 15) break;
+           if (reportDates.length > 15) break; 
       }
       break;
     default:
@@ -76,33 +73,38 @@ function calculateHistoricalStockData(
   }
   
   reportDates = Array.from(new Set(reportDates.map(d => d.toISOString()))).map(ds => parseISO(ds)).sort((a,b) => a.getTime() - b.getTime());
-  reportDates = reportDates.filter(date => date <= today); // Ensure no future dates
+  reportDates = reportDates.filter(date => date <= today); 
 
   return reportDates.map(reportDate => {
     let totalValueForDate = 0;
     let totalQuantityForDate = 0;
 
     productBatches.forEach(batch => {
+      // Batch must exist at or before the reportDate
       if (isAfter(parseISO(batch.createdAt), reportDate)) {
         return;
       }
 
       let quantityInBatchAtReportDate = batch.initialQuantity;
-      const transactionsForBatchBeforeReportDate = allTransactions.filter(
+      const transactionsForBatchBeforeOrOnReportDate = allTransactions.filter(
         t => t.batchId === batch.id &&
-             !isAfter(parseISO(t.timestamp), reportDate)
+             !isAfter(parseISO(t.timestamp), reportDate) // transaction timestamp <= reportDate
       );
 
-      transactionsForBatchBeforeReportDate.forEach(t => {
+      transactionsForBatchBeforeOrOnReportDate.forEach(t => {
         if (t.type === 'OUT') {
           quantityInBatchAtReportDate -= t.quantity;
         }
-        // IN transactions are already accounted for by initialQuantity at batch creation time
+        // IN transactions are part of initialQuantity if transaction is at batch.createdAt
+        // If IN transaction is after batch.createdAt but before/on reportDate (e.g. adjustment_increase),
+        // this model currently doesn't support separate 'IN' types for quantity increase post-initial.
+        // For this system, 'IN' is primarily for initial batch.
       });
       
       quantityInBatchAtReportDate = Math.max(0, quantityInBatchAtReportDate);
       
-      if (quantityInBatchAtReportDate > 0) {
+      // Batch should not have expired before the report date to be counted
+      if (quantityInBatchAtReportDate > 0 && !isBefore(parseISO(batch.expiryDate), reportDate) ) {
         totalValueForDate += quantityInBatchAtReportDate * batch.unitCost;
         totalQuantityForDate += quantityInBatchAtReportDate;
       }
@@ -125,11 +127,29 @@ export function StockValuationChartView() {
   const { products, batches, transactions } = useInventory();
   const activeProducts = useMemo(() => products.filter(p => !p.isArchived), [products]);
 
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(activeProducts.length > 0 ? activeProducts[0].id : null);
-  const [selectedTimeScale, setSelectedTimeScale] = useState<string>(CHART_TIMESCALE_OPTIONS[0].value);
+  const [hasMounted, setHasMounted] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<string | undefined>(undefined);
+  const [selectedTimeScale, setSelectedTimeScale] = useState<ChartTimeScaleValue>(CHART_TIMESCALE_OPTIONS[0].value);
   const [chartData, setChartData] = useState<ChartDataPoint[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (hasMounted) {
+      if (activeProducts.length > 0) {
+        const currentSelectionIsValid = selectedProductId && activeProducts.some(p => p.id === selectedProductId);
+        if (!currentSelectionIsValid) {
+          setSelectedProductId(activeProducts[0].id);
+        }
+      } else {
+        setSelectedProductId(undefined);
+      }
+    }
+  }, [hasMounted, activeProducts, selectedProductId]);
 
   const handleGenerateChart = () => {
     if (!selectedProductId) {
@@ -155,19 +175,19 @@ export function StockValuationChartView() {
   };
   
   useEffect(() => {
-    if (selectedProductId) {
+    if (hasMounted && selectedProductId) {
       handleGenerateChart();
-    } else {
+    } else if (hasMounted && !selectedProductId) {
       setChartData(null);
-      setError("请选择一个产品以查看图表。");
+      setError(activeProducts.length > 0 ? "请选择一个产品以查看图表。" : "无可用产品进行分析。");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProductId, selectedTimeScale, batches, transactions]);
+  }, [hasMounted, selectedProductId, selectedTimeScale, batches, transactions]);
 
 
   const chartConfig = {
     stockValue: {
-      label: "库存价值 ($)",
+      label: "库存价值 (¥)", // Updated currency
       color: "hsl(var(--chart-1))",
     },
     quantity: {
@@ -180,6 +200,32 @@ export function StockValuationChartView() {
   const selectedProductName = selectedProduct?.name || "";
   const selectedProductUnit = selectedProduct?.unit || "";
 
+  if (!hasMounted) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <LineChartIcon className="h-6 w-6" />
+            库存变化图表
+          </CardTitle>
+          <CardDescription>
+            选择产品和时间范围以可视化其库存价值（基于入库成本）和数量随时间的变化。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Skeleton className="h-10 w-full" /> 
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full sm:w-auto" />
+          </div>
+          <div className="flex items-center justify-center h-72">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="ml-2">正在加载图表组件...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -194,7 +240,11 @@ export function StockValuationChartView() {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Select onValueChange={setSelectedProductId} value={selectedProductId || undefined} disabled={activeProducts.length === 0}>
+          <Select 
+            onValueChange={setSelectedProductId} 
+            value={selectedProductId} // `undefined` will show placeholder
+            disabled={activeProducts.length === 0 || isLoading}
+          >
             <SelectTrigger>
               <SelectValue placeholder="选择一个产品" />
             </SelectTrigger>
@@ -207,7 +257,7 @@ export function StockValuationChartView() {
             </SelectContent>
           </Select>
 
-          <Select onValueChange={setSelectedTimeScale} value={selectedTimeScale}>
+          <Select onValueChange={(value) => setSelectedTimeScale(value as ChartTimeScaleValue)} value={selectedTimeScale} disabled={isLoading}>
             <SelectTrigger>
               <SelectValue placeholder="选择时间范围" />
             </SelectTrigger>
@@ -245,7 +295,7 @@ export function StockValuationChartView() {
         )}
 
         {!isLoading && !error && chartData && chartData.length > 0 && (
-          <div className="h-[450px] w-full"> {/* Increased height for two Y-axes */}
+          <div className="h-[450px] w-full">
             <ChartContainer config={chartConfig} className="min-h-[200px] w-full h-full">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
@@ -260,7 +310,7 @@ export function StockValuationChartView() {
                     tickLine={false} 
                     axisLine={false} 
                     tickMargin={8} 
-                    tickFormatter={(value) => `$${value}`} 
+                    tickFormatter={(value) => `¥${value}`} 
                     domain={['auto', 'auto']}
                     stroke="hsl(var(--chart-1))"
                   />
@@ -281,7 +331,7 @@ export function StockValuationChartView() {
                                 hideLabel 
                                 formatter={(value, name, props) => {
                                   if (name === 'stockValue') {
-                                    return [`$${(value as number).toFixed(2)}`, chartConfig.stockValue.label];
+                                    return [`¥${(value as number).toFixed(2)}`, chartConfig.stockValue.label];
                                   }
                                   if (name === 'quantity') {
                                     return [`${value} ${selectedProductUnit}`, chartConfig.quantity.label];
@@ -297,7 +347,7 @@ export function StockValuationChartView() {
                     stroke={`hsl(var(--chart-1))`}
                     strokeWidth={2}
                     dot={true}
-                    name={selectedProductName ? `${selectedProductName} 库存价值` : "库存价值"}
+                    name={selectedProductName ? `${selectedProductName} ${chartConfig.stockValue.label}` : chartConfig.stockValue.label}
                   />
                    <Line
                     yAxisId="right"
@@ -306,7 +356,7 @@ export function StockValuationChartView() {
                     stroke={`hsl(var(--chart-2))`}
                     strokeWidth={2}
                     dot={true}
-                    name={selectedProductName ? `${selectedProductName} 库存数量` : "库存数量"}
+                    name={selectedProductName ? `${selectedProductName} ${chartConfig.quantity.label}` : chartConfig.quantity.label}
                   />
                   <Legend content={<ChartLegendContent />} />
                 </LineChart>
@@ -325,3 +375,6 @@ export function StockValuationChartView() {
     </Card>
   );
 }
+
+
+    
