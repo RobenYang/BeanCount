@@ -5,24 +5,24 @@ export interface Product {
   id: string;
   name: string;
   category: ProductCategory;
-  unit: string; // e.g., kg, liter, pcs
-  shelfLifeDays: number | null; // Standard shelf life in days, null if not applicable
-  lowStockThreshold: number; // Product-specific low stock threshold
-  imageUrl?: string; // Optional: Data URI for the product image
-  createdAt: string; // ISO date string
-  isArchived?: boolean; // For soft delete
+  unit: string; 
+  shelfLifeDays: number | null; 
+  lowStockThreshold: number; 
+  imageUrl?: string; 
+  createdAt: string; 
+  isArchived?: boolean; 
 }
 
 export interface Batch {
   id: string;
   productId: string;
-  productName?: string; // Denormalized for easier display
-  productionDate: string | null; // ISO date string, null if not applicable
-  expiryDate: string | null; // ISO date string, calculated, null if not applicable
+  productName?: string; 
+  productionDate: string | null; 
+  expiryDate: string | null; 
   initialQuantity: number;
   currentQuantity: number;
   unitCost: number;
-  createdAt: string; // ISO date string
+  createdAt: string; 
 }
 
 export type TransactionType = 'IN' | 'OUT';
@@ -45,19 +45,26 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
 export interface Transaction {
   id: string;
   productId: string;
-  productName?: string; // Denormalized
+  productName?: string; 
   batchId?: string;
   type: TransactionType;
-  quantity: number; // Always positive, direction determined by type and isCorrectionIncrease
-  timestamp: string; // ISO date string
+  quantity: number; 
+  timestamp: string; 
   reason?: OutflowReasonValue;
   notes?: string;
-  unitCostAtTransaction?: number; // To record cost at time of transaction
-  isCorrectionIncrease?: boolean; // True if this 'OUT' transaction actually increased stock (negative outflow)
+  unitCostAtTransaction?: number; 
+  isCorrectionIncrease?: boolean; 
 }
 
 export interface AppSettings {
   expiryWarningDays: number;
+}
+
+export type StockAnalysisTimeDimensionValue = 'YESTERDAY' | 'LAST_3_DAYS' | 'LAST_7_DAYS' | 'LAST_FULL_WEEK' | 'LAST_30_DAYS';
+
+export interface StockAnalysisTimeDimensionOption {
+  value: StockAnalysisTimeDimensionValue;
+  label: string;
 }
 
 export interface ProductStockAnalysis {
@@ -65,15 +72,16 @@ export interface ProductStockAnalysis {
   productName: string;
   productUnit: string;
   currentStock: number;
-  avgDailyConsumptionLastWeek: number;
-  predictedDepletionDate: string; // Formatted date or a string like 'N/A', '已耗尽', '无法预测'
-  daysToDepletion?: number; // Numerical days, could be Infinity or NaN
+  avgDailyConsumption: number; // Renamed from avgDailyConsumptionLastWeek
+  predictedDepletionDate: string; 
+  daysToDepletion?: number; 
+  analysisPeriodLabel: string; // To show what period was used for calculation
 }
 
 export interface User {
   id: string;
   username: string;
-  password?: string; // Storing plain text for prototype, normally this would be securely hashed
+  password?: string; 
   isSuperAdmin?: boolean;
 }
 
@@ -82,7 +90,30 @@ export interface ClientErrorLog {
   timestamp: string;
   message: string;
   stack?: string;
-  errorType?: string; // e.g., 'React ErrorBoundary', 'Global onerror', 'Unhandled Promise Rejection'
-  componentStack?: string; // From React ErrorInfo
-  url?: string; // window.location.href
+  errorType?: string; 
+  componentStack?: string; 
+  url?: string; 
+}
+
+// For Product Management Page Table Customization
+export type ProductColumnKey = 
+  | 'name' 
+  | 'category' 
+  | 'unit' 
+  | 'shelfLifeDays' 
+  | 'lowStockThreshold' 
+  | 'totalQuantity' 
+  | 'totalValue' 
+  | 'createdAt';
+
+export interface ProductTableColumn {
+  id: ProductColumnKey;
+  label: string;
+  defaultVisible: boolean;
+  sortable: boolean;
+  isNumeric?: boolean; // Hint for sorting
+  isDate?: boolean;    // Hint for sorting
+  headerClassName?: string;
+  cellClassName?: string;
+  getValue: (product: Product, details: { totalQuantity: number; totalValue: number; batches: Batch[] }) => string | number | null;
 }
