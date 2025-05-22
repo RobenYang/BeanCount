@@ -72,10 +72,10 @@ export interface ProductStockAnalysis {
   productName: string;
   productUnit: string;
   currentStock: number;
-  avgDailyConsumption: number; // Renamed from avgDailyConsumptionLastWeek
+  avgDailyConsumption: number;
   predictedDepletionDate: string; 
   daysToDepletion?: number; 
-  analysisPeriodLabel: string; // To show what period was used for calculation
+  analysisPeriodLabel: string; 
 }
 
 export interface User {
@@ -95,7 +95,6 @@ export interface ClientErrorLog {
   url?: string; 
 }
 
-// For Product Management Page Table Customization
 export type ProductColumnKey = 
   | 'name' 
   | 'category' 
@@ -111,9 +110,24 @@ export interface ProductTableColumn {
   label: string;
   defaultVisible: boolean;
   sortable: boolean;
-  isNumeric?: boolean; // Hint for sorting
-  isDate?: boolean;    // Hint for sorting
+  isNumeric?: boolean; 
+  isDate?: boolean;    
   headerClassName?: string;
   cellClassName?: string;
   getValue: (product: Product, details: { totalQuantity: number; totalValue: number; batches: Batch[] }) => string | number | null;
+}
+
+// For Transaction Page Filters
+export type TransactionTimeFilterValue = 
+  | 'ALL'
+  | 'TODAY' 
+  | 'YESTERDAY' 
+  | 'LAST_7_DAYS' // Up to and including yesterday
+  | 'LAST_30_DAYS' // Up to and including yesterday
+  | 'THIS_MONTH' 
+  | 'LAST_MONTH';
+
+export interface TransactionTimeFilterOption {
+  value: TransactionTimeFilterValue;
+  label: string;
 }

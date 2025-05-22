@@ -2,15 +2,56 @@
 "use client";
 
 import { useInventory } from "@/contexts/InventoryContext";
-import type { Transaction } from "@/lib/types";
+import type { Transaction, TransactionTimeFilterValue, TransactionTimeFilterOption } from "@/lib/types";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { History, ArrowDownToLine, ArrowUpFromLine, Loader2 } from "lucide-react"; // Added Loader2
-import { format, parseISO } from "date-fns";
+import { History, ArrowDownToLine, ArrowUpFromLine, Loader2, CalendarIcon, Filter, X } from "lucide-react";
+import { format, parseISO, startOfDay, endOfDay, isWithinInterval, subDays, startOfMonth, endOfMonth, subMonths, isSameDay } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useState, useEffect } from "react"; // Added useState, useEffect for hasMounted
+import { useState, useEffect, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+
+const TIME_FILTER_OPTIONS: TransactionTimeFilterOption[] = [
+  { value: 'ALL', label: '所有记录' },
+  { value: 'TODAY', label: '今天' },
+  { value: 'YESTERDAY', label: '昨天' },
+  { value: 'LAST_7_DAYS', label: '过去7天 (不含今天)' },
+  { value: 'LAST_30_DAYS', label: '过去30天 (不含今天)' },
+  { value: 'THIS_MONTH', label: '本月' },
+  { value: 'LAST_MONTH', label: '上个月' },
+];
+
+function getTransactionDateRange(dimension: TransactionTimeFilterValue): { start: Date; end: Date } | null {
+  const today = new Date();
+  const todayStart = startOfDay(today);
+  const yesterday = subDays(todayStart, 1);
+
+  switch (dimension) {
+    case 'TODAY':
+      return { start: todayStart, end: endOfDay(today) };
+    case 'YESTERDAY':
+      return { start: yesterday, end: endOfDay(yesterday) };
+    case 'LAST_7_DAYS':
+      return { start: subDays(todayStart, 7), end: endOfDay(yesterday) };
+    case 'LAST_30_DAYS':
+      return { start: subDays(todayStart, 30), end: endOfDay(yesterday) };
+    case 'THIS_MONTH':
+      return { start: startOfMonth(today), end: endOfMonth(today) };
+    case 'LAST_MONTH':
+      const lastMonthStart = startOfMonth(subMonths(today, 1));
+      return { start: lastMonthStart, end: endOfMonth(lastMonthStart) };
+    case 'ALL':
+    default:
+      return null;
+  }
+}
+
 
 function formatTransactionType(type: Transaction['type'], isCorrectionIncrease?: boolean) {
   if (type === 'IN') {
@@ -36,24 +77,62 @@ function formatOutflowReason(reason?: Transaction['reason']) {
 export default function TransactionsPage() {
   const { transactions, isLoadingTransactions } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+  const [selectedTimeDimension, setSelectedTimeDimension] = useState<TransactionTimeFilterValue>('ALL');
 
   useEffect(() => {
     setHasMounted(true);
   }, []);
 
-  // Sorting is done after fetching and when transactions array is populated
-  const sortedTransactions = [...transactions].sort((a, b) =>
-    parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()
-  );
+  const handleDateSelect = (date: Date | undefined) => {
+    setSelectedDate(date);
+    if (date) {
+      setSelectedTimeDimension('ALL'); // Clear dimension filter if a specific date is picked
+    }
+  };
+
+  const handleTimeDimensionSelect = (value: string) => {
+    const dimension = value as TransactionTimeFilterValue;
+    setSelectedTimeDimension(dimension);
+    if (dimension !== 'ALL') {
+      setSelectedDate(undefined); // Clear date filter if a dimension is picked
+    }
+  };
+  
+  const clearFilters = () => {
+    setSelectedDate(undefined);
+    setSelectedTimeDimension('ALL');
+  };
+
+  const filteredTransactions = useMemo(() => {
+    if (!hasMounted) return [];
+    let items = [...transactions];
+
+    if (selectedDate) {
+      items = items.filter(t => isSameDay(parseISO(t.timestamp), selectedDate));
+    } else if (selectedTimeDimension !== 'ALL') {
+      const range = getTransactionDateRange(selectedTimeDimension);
+      if (range) {
+        items = items.filter(t => isWithinInterval(parseISO(t.timestamp), { start: range.start, end: range.end }));
+      }
+    }
+    
+    return items.sort((a, b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime());
+  }, [transactions, selectedDate, selectedTimeDimension, hasMounted]);
+
 
   if (!hasMounted || isLoadingTransactions) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <History className="h-8 w-8" />
             交易记录
           </h1>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" className="w-full sm:w-auto" disabled><CalendarIcon className="mr-2 h-4 w-4" /> 日期筛选</Button>
+            <Button variant="outline" className="w-full sm:w-auto" disabled><Filter className="mr-2 h-4 w-4" /> 时间范围</Button>
+          </div>
         </div>
         <Card>
           <CardHeader>
@@ -71,21 +150,67 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-3xl font-bold flex items-center gap-2">
           <History className="h-8 w-8" />
           交易记录
         </h1>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto items-stretch">
+            <Popover>
+                <PopoverTrigger asChild>
+                <Button
+                    variant={"outline"}
+                    className={cn(
+                    "w-full sm:min-w-[240px] justify-start text-left font-normal h-10",
+                    !selectedDate && "text-muted-foreground"
+                    )}
+                >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {selectedDate ? format(selectedDate, "PPP", {locale: zhCN}) : <span>按日期筛选</span>}
+                </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                <Calendar
+                    locale={zhCN}
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleDateSelect}
+                    initialFocus
+                />
+                </PopoverContent>
+            </Popover>
+
+            <Select value={selectedTimeDimension} onValueChange={handleTimeDimensionSelect}>
+                <SelectTrigger className="w-full sm:min-w-[200px] h-10">
+                    <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                    <SelectValue placeholder="按时间范围筛选" />
+                </SelectTrigger>
+                <SelectContent>
+                    {TIME_FILTER_OPTIONS.map(option => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+            {(selectedDate || selectedTimeDimension !== 'ALL') && (
+                 <Button variant="ghost" onClick={clearFilters} className="h-10 px-3" title="清除筛选">
+                    <X className="h-4 w-4" />
+                 </Button>
+            )}
+        </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>所有交易明细</CardTitle>
-          <CardDescription>按时间从新到旧排序。包括所有产品的入库和出库记录。</CardDescription>
+          <CardTitle>交易明细</CardTitle>
+          <CardDescription>
+            {selectedDate ? `显示 ${format(selectedDate, "yyyy年M月d日", {locale: zhCN})} 的记录。` : 
+             selectedTimeDimension !== 'ALL' ? `显示 ${TIME_FILTER_OPTIONS.find(opt => opt.value === selectedTimeDimension)?.label || ''} 的记录。` :
+            '按时间从新到旧排序。包括所有产品的入库和出库记录。'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          {sortedTransactions.length > 0 ? (
-            <ScrollArea className="h-[65vh]">
+          {filteredTransactions.length > 0 ? (
+            <ScrollArea className="h-[60vh] sm:h-[65vh]">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -101,7 +226,7 @@ export default function TransactionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedTransactions.map((transaction) => (
+                  {filteredTransactions.map((transaction) => (
                     <TableRow key={transaction.id}>
                       <TableCell>{formatTransactionType(transaction.type, transaction.isCorrectionIncrease)}</TableCell>
                       <TableCell>{transaction.productName}</TableCell>
@@ -126,7 +251,7 @@ export default function TransactionsPage() {
           ) : (
             <div className="text-center text-muted-foreground py-10">
               <History className="mx-auto h-12 w-12 mb-4" />
-              <p>暂无交易记录。</p>
+              <p>{selectedDate || selectedTimeDimension !== 'ALL' ? '在选定的日期/范围内未找到交易记录。' : '暂无交易记录。'}</p>
             </div>
           )}
         </CardContent>
