@@ -49,15 +49,17 @@ const productCategoryOptions: { value: ProductCategory | 'ALL'; label: string }[
 ];
 
 const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
-  { id: 'name', label: '名称', defaultVisible: true, sortable: true, getValue: (p) => p.name, isNumeric: false, isDate: false, headerClassName: "min-w-[200px]" },
-  { id: 'category', label: '类别', defaultVisible: true, sortable: true, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
-  { id: 'unit', label: '单位', defaultVisible: true, sortable: true, getValue: (p) => p.unit, isNumeric: false, isDate: false },
-  { id: 'shelfLifeDays', label: '保质期', defaultVisible: true, sortable: true, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
-  { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: true, sortable: true, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
+  { id: 'name', label: '名称', defaultVisible: true, sortable: false, getValue: (p) => p.name, isNumeric: false, isDate: false, headerClassName: "min-w-[200px]" },
+  { id: 'category', label: '类别', defaultVisible: true, sortable: false, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
+  { id: 'unit', label: '单位', defaultVisible: true, sortable: false, getValue: (p) => p.unit, isNumeric: false, isDate: false },
+  { id: 'shelfLifeDays', label: '保质期', defaultVisible: true, sortable: false, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
+  { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: true, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalQuantity', label: '库存数量', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalQuantity, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalValue', label: '库存总价值', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalValue, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
-  { id: 'createdAt', label: '创建日期', defaultVisible: true, sortable: true, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
+  { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
+
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v1';
 
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays, visibleMainColumnsCount }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number, visibleMainColumnsCount: number }) {
@@ -257,7 +259,7 @@ function ProductRow({
 }
 
 type SortConfig = {
-  key: ProductColumnKey | 'totalQuantity' | 'totalValue' | 'createdAt' | null;
+  key: ProductColumnKey | null;
   direction: 'ascending' | 'descending';
 };
 
@@ -271,19 +273,42 @@ export default function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
 
-  const initialVisibleColumns = ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
+  const initialVisibleColumns = useMemo(() => ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
     acc[col.id] = col.defaultVisible;
     return acc;
-  }, {} as Record<ProductColumnKey, boolean>);
-  const [visibleColumns, setVisibleColumns] = useState<Record<ProductColumnKey, boolean>>(initialVisibleColumns);
+  }, {} as Record<ProductColumnKey, boolean>), []);
   
+  const [visibleColumns, setVisibleColumns] = useState<Record<ProductColumnKey, boolean>>(initialVisibleColumns);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
 
   useEffect(() => {
     setHasMounted(true);
-  }, []);
+    const storedVisibleColumns = localStorage.getItem(LOCAL_STORAGE_VISIBLE_COLUMNS_KEY);
+    if (storedVisibleColumns) {
+      try {
+        const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
+        const validatedColumns = { ...initialVisibleColumns };
+        for (const colDef of ALL_PRODUCT_COLUMNS) {
+          if (parsedColumns.hasOwnProperty(colDef.id)) {
+            validatedColumns[colDef.id] = parsedColumns[colDef.id];
+          }
+        }
+        setVisibleColumns(validatedColumns);
+      } catch (e) {
+        console.error("Failed to parse visible columns from localStorage", e);
+        setVisibleColumns(initialVisibleColumns);
+      }
+    }
+  }, [initialVisibleColumns]);
 
-  const handleSort = (columnKey: ProductColumnKey | 'totalQuantity' | 'totalValue' | 'createdAt') => {
+  useEffect(() => {
+    if (hasMounted) {
+      localStorage.setItem(LOCAL_STORAGE_VISIBLE_COLUMNS_KEY, JSON.stringify(visibleColumns));
+    }
+  }, [visibleColumns, hasMounted]);
+
+
+  const handleSort = (columnKey: ProductColumnKey) => {
     let direction: 'ascending' | 'descending' = 'ascending';
     if (sortConfig.key === columnKey && sortConfig.direction === 'ascending') {
       direction = 'descending';
@@ -308,27 +333,29 @@ export default function ProductsPage() {
     
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
-      tempProducts.sort((a, b) => {
-        const detailsA = getProductStockDetails(a.id);
-        const detailsB = getProductStockDetails(b.id);
-        
-        let valA = columnDefinition?.getValue(a, detailsA);
-        let valB = columnDefinition?.getValue(b, detailsB);
+      if (columnDefinition && columnDefinition.sortable) { // Only sort if column is sortable
+        tempProducts.sort((a, b) => {
+          const detailsA = getProductStockDetails(a.id);
+          const detailsB = getProductStockDetails(b.id);
+          
+          let valA = columnDefinition.getValue(a, detailsA);
+          let valB = columnDefinition.getValue(b, detailsB);
 
-        if (columnDefinition?.isNumeric) {
-          valA = Number(valA) || 0;
-          valB = Number(valB) || 0;
-          return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-        } else if (columnDefinition?.isDate) {
-          valA = valA ? parseISO(valA as string).getTime() : 0;
-          valB = valB ? parseISO(valB as string).getTime() : 0;
-           return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-        } else { // string
-          valA = String(valA || '').toLowerCase();
-          valB = String(valB || '').toLowerCase();
-          return sortConfig.direction === 'ascending' ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN');
-        }
-      });
+          if (columnDefinition.isNumeric) {
+            valA = Number(valA) || 0;
+            valB = Number(valB) || 0;
+            return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
+          } else if (columnDefinition.isDate) {
+            valA = valA ? parseISO(valA as string).getTime() : 0;
+            valB = valB ? parseISO(valB as string).getTime() : 0;
+            return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
+          } else { // string
+            valA = String(valA || '').toLowerCase();
+            valB = String(valB || '').toLowerCase();
+            return sortConfig.direction === 'ascending' ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN');
+          }
+        });
+      }
     }
     return tempProducts;
   }, [products, searchTerm, categoryFilter, sortConfig, hasMounted, isLoadingProducts, getProductStockDetails]);
@@ -397,7 +424,7 @@ export default function ProductsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* Expand icon */}
-                    {ALL_PRODUCT_COLUMNS.map(col => (
+                    {ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).map(col => ( // Use initialVisibleColumns for skeleton
                         <TableHead key={`skel-head-${col.id}`} className={col.headerClassName}>
                             <Skeleton className="h-5 w-20"/>
                         </TableHead>
@@ -409,7 +436,7 @@ export default function ProductsPage() {
                   {[...Array(3)].map((_, i) => (
                     <TableRow key={`skeleton-row-${i}`}>
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
-                      {ALL_PRODUCT_COLUMNS.map(col => (
+                      {ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).map(col => ( // Use initialVisibleColumns for skeleton
                         <TableCell key={`skel-cell-${i}-${col.id}`} className={col.cellClassName}>
                             {col.id === 'name' ? 
                                 (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) : 
@@ -513,7 +540,7 @@ export default function ProductsPage() {
                          <TableHead 
                             key={colDef.id} 
                             className={colDef.headerClassName}
-                            onClick={colDef.sortable ? () => handleSort(colDef.id as ProductColumnKey) : undefined} // Type assertion
+                            onClick={colDef.sortable ? () => handleSort(colDef.id) : undefined}
                             style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
@@ -568,7 +595,7 @@ export default function ProductsPage() {
                          <TableHead 
                             key={colDef.id} 
                             className={colDef.headerClassName}
-                            onClick={colDef.sortable ? () => handleSort(colDef.id as ProductColumnKey) : undefined} // Type assertion
+                            onClick={colDef.sortable ? () => handleSort(colDef.id) : undefined}
                             style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
