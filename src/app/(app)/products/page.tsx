@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { 
     PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, 
-    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical
+    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown
 } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
@@ -59,10 +59,10 @@ const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
   { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
 
-const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v1';
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v2';
 
 
-function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays, visibleMainColumnsCount }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number, visibleMainColumnsCount: number }) {
+function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
   if (batches.length === 0) {
     return <p className="p-4 text-sm text-muted-foreground">该产品暂无活动批次信息。</p>;
   }
@@ -111,7 +111,7 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 {productCategory === 'INGREDIENT' && (
                   <TableCell className="text-xs">
                     {batch.expiryDate ? (
-                       <Badge variant={expiryBadgeVariant} className="text-xs leading-tight whitespace-normal">
+                       <Badge variant={expiryBadgeVariant} className="text-xs leading-tight">
                         <div className="flex flex-col items-start text-left">
                           <span>{format(parseISO(batch.expiryDate), "yyyy-MM-dd")}</span>
                           {daysToExpiryText && <span className="block">{daysToExpiryText}</span>}
@@ -211,10 +211,11 @@ function ProductRow({
     return <TableCell key={`${product.id}-${colDef.id}`} className={colDef.cellClassName}>{cellContent}</TableCell>;
   });
 
-  const numberOfVisibleColumns = 1 + ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]).length + 1; // expand, visible, actions
+  const numberOfVisibleDataColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]).length;
+  const numberOfTotalColumns = 1 + numberOfVisibleDataColumns + 1; // expand icon, data columns, actions
 
   return (
-    <>
+    <React.Fragment key={product.id}>
       <TableRow key={`${product.id}-main`}>
         <TableCell className="w-[50px]">
             <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
@@ -241,8 +242,8 @@ function ProductRow({
       </TableRow>
       {isExpanded && (
         <TableRow key={`${product.id}-details`}>
-          <TableCell colSpan={numberOfVisibleColumns + 1}> {/* +1 for the expand icon cell */}
-            <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} visibleMainColumnsCount={numberOfVisibleColumns} />
+          <TableCell colSpan={numberOfTotalColumns}>
+            <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
           </TableCell>
         </TableRow>
       )}
@@ -254,7 +255,7 @@ function ProductRow({
           productName={product.name}
         />
       )}
-    </>
+    </React.Fragment>
   );
 }
 
@@ -273,13 +274,17 @@ export default function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
 
-  const initialVisibleColumns = useMemo(() => ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
-    acc[col.id] = col.defaultVisible;
-    return acc;
-  }, {} as Record<ProductColumnKey, boolean>), []);
+  const initialVisibleColumns = useMemo(() => {
+    const defaults = ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
+        acc[col.id] = col.defaultVisible;
+        return acc;
+    }, {} as Record<ProductColumnKey, boolean>);
+    defaults['name'] = true; // Ensure 'name' is always true by default
+    return defaults;
+  }, []);
   
   const [visibleColumns, setVisibleColumns] = useState<Record<ProductColumnKey, boolean>>(initialVisibleColumns);
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'descending' });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'descending' });
 
   useEffect(() => {
     setHasMounted(true);
@@ -287,19 +292,27 @@ export default function ProductsPage() {
     if (storedVisibleColumns) {
       try {
         const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
-        const validatedColumns = { ...initialVisibleColumns };
+        const validatedColumns = { ...initialVisibleColumns }; // Start with defaults
         for (const colDef of ALL_PRODUCT_COLUMNS) {
-          if (parsedColumns.hasOwnProperty(colDef.id)) {
-            validatedColumns[colDef.id] = parsedColumns[colDef.id];
-          }
+            if (colDef.id === 'name') { // 'name' column is always visible
+                validatedColumns[colDef.id] = true;
+            } else if (parsedColumns.hasOwnProperty(colDef.id)) {
+                validatedColumns[colDef.id] = parsedColumns[colDef.id];
+            }
         }
         setVisibleColumns(validatedColumns);
       } catch (e) {
         console.error("Failed to parse visible columns from localStorage", e);
-        setVisibleColumns(initialVisibleColumns);
+        // Fallback to initialVisibleColumns if parsing fails or data is malformed
+        const defaultColsWithFixedName = { ...initialVisibleColumns };
+        defaultColsWithFixedName['name'] = true;
+        setVisibleColumns(defaultColsWithFixedName);
       }
+    } else {
+        // If nothing in localStorage, use initialVisibleColumns (which already has name=true)
+        setVisibleColumns(initialVisibleColumns);
     }
-  }, [initialVisibleColumns]);
+  }, [initialVisibleColumns]); // Only depends on initialVisibleColumns
 
   useEffect(() => {
     if (hasMounted) {
@@ -309,11 +322,19 @@ export default function ProductsPage() {
 
 
   const handleSort = (columnKey: ProductColumnKey) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig.key === columnKey && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key: columnKey, direction });
+    setSortConfig(prevSortConfig => {
+      if (prevSortConfig.key === columnKey) {
+        // Cycle: descending -> ascending -> no sort
+        if (prevSortConfig.direction === 'descending') {
+          return { key: columnKey, direction: 'ascending' };
+        } else { // Was 'ascending'
+          return { key: null, direction: 'descending' }; // Cancel sort for this key
+        }
+      } else {
+        // New column clicked, start with descending
+        return { key: columnKey, direction: 'descending' };
+      }
+    });
   };
 
   const filteredAndSortedProducts = useMemo(() => {
@@ -333,8 +354,9 @@ export default function ProductsPage() {
     
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
-      if (columnDefinition && columnDefinition.sortable) { // Only sort if column is sortable
-        tempProducts.sort((a, b) => {
+      if (columnDefinition && columnDefinition.sortable) {
+        // Create a new array to sort, preserving the original order of tempProducts for next time
+        tempProducts = [...tempProducts].sort((a, b) => {
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
           
@@ -345,11 +367,11 @@ export default function ProductsPage() {
             valA = Number(valA) || 0;
             valB = Number(valB) || 0;
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else if (columnDefinition.isDate) {
-            valA = valA ? parseISO(valA as string).getTime() : 0;
-            valB = valB ? parseISO(valB as string).getTime() : 0;
+          } else if (columnDefinition.isDate && valA && valB) { // Ensure valA and valB are not null for dates
+            valA = parseISO(valA as string).getTime();
+            valB = parseISO(valB as string).getTime();
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else { // string
+          } else { // string or other non-numeric/non-date
             valA = String(valA || '').toLowerCase();
             valB = String(valB || '').toLowerCase();
             return sortConfig.direction === 'ascending' ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN');
@@ -398,10 +420,10 @@ export default function ProductsPage() {
   };
   
   const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]);
-  const numberOfVisibleDataColumns = displayedColumns.length;
-
 
   if (!hasMounted || isLoadingProducts) {
+    // Skeleton UI - keep this for loading states
+    const skeletonColumnCount = ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).length;
     return (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -411,7 +433,7 @@ export default function ProductsPage() {
         <div className="flex flex-col sm:flex-row gap-4">
           <Skeleton className="h-10 flex-grow" /> 
           <Skeleton className="h-10 w-full sm:w-[180px]" />
-          <Skeleton className="h-10 w-10 sm:w-auto" /> {/* Column visibility placeholder */}
+          <Skeleton className="h-10 w-10 sm:w-auto" />
         </div>
         <Tabs value="active">
           <TabsList>
@@ -423,22 +445,22 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[50px]"></TableHead> {/* Expand icon */}
-                    {ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).map(col => ( // Use initialVisibleColumns for skeleton
-                        <TableHead key={`skel-head-${col.id}`} className={col.headerClassName}>
+                    <TableHead className="w-[50px]"></TableHead>
+                    {Array.from({ length: skeletonColumnCount }).map((_, idx) => (
+                        <TableHead key={`skel-head-col-${idx}`} >
                             <Skeleton className="h-5 w-20"/>
                         </TableHead>
                     ))}
-                    <TableHead className="text-right w-[120px]"><Skeleton className="h-5 w-16 inline-block"/></TableHead> {/* Actions */}
+                    <TableHead className="text-right w-[120px]"><Skeleton className="h-5 w-16 inline-block"/></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {[...Array(3)].map((_, i) => (
                     <TableRow key={`skeleton-row-${i}`}>
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
-                      {ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).map(col => ( // Use initialVisibleColumns for skeleton
-                        <TableCell key={`skel-cell-${i}-${col.id}`} className={col.cellClassName}>
-                            {col.id === 'name' ? 
+                      {Array.from({ length: skeletonColumnCount }).map((_, colIdx) => (
+                        <TableCell key={`skel-cell-${i}-${colIdx}`} >
+                            {colIdx === 0 ? // Assuming name is the first visible column
                                 (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) : 
                                 (<Skeleton className="h-5 w-16" />)
                             }
@@ -455,6 +477,13 @@ export default function ProductsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+         {productToEdit && ( // Keep this for edit functionality during loading, though it might not be ideal UX
+            <EditProductForm 
+                product={productToEdit}
+                isOpen={isEditModalOpen}
+                onClose={handleCloseEditModal}
+            />
+        )}
       </div>
     );
   }
@@ -507,7 +536,7 @@ export default function ProductsPage() {
                 <DropdownMenuContent align="end">
                     <DropdownMenuLabel>切换列显示</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {ALL_PRODUCT_COLUMNS.map((column) => (
+                    {ALL_PRODUCT_COLUMNS.filter(col => col.id !== 'name').map((column) => (
                         <DropdownMenuCheckboxItem
                         key={column.id}
                         className="capitalize"
@@ -544,7 +573,15 @@ export default function ProductsPage() {
                             style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
-                            {colDef.sortable && <ArrowUpDown className="ml-2 h-3 w-3 inline-block opacity-50" />}
+                            {colDef.sortable && (
+                                sortConfig.key === colDef.id ? (
+                                    sortConfig.direction === 'ascending' ?
+                                    <ArrowUp className="ml-2 h-3 w-3 inline-block" /> :
+                                    <ArrowDown className="ml-2 h-3 w-3 inline-block" />
+                                ) : (
+                                    <ArrowUpDown className="ml-2 h-3 w-3 inline-block opacity-50" />
+                                )
+                            )}
                         </TableHead>
                     ))}
                     <TableHead className="text-right w-[120px]">操作</TableHead> {/* Actions column */}
@@ -599,7 +636,15 @@ export default function ProductsPage() {
                             style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
-                            {colDef.sortable && <ArrowUpDown className="ml-2 h-3 w-3 inline-block opacity-50" />}
+                            {colDef.sortable && (
+                                sortConfig.key === colDef.id ? (
+                                    sortConfig.direction === 'ascending' ?
+                                    <ArrowUp className="ml-2 h-3 w-3 inline-block" /> :
+                                    <ArrowDown className="ml-2 h-3 w-3 inline-block" />
+                                ) : (
+                                    <ArrowUpDown className="ml-2 h-3 w-3 inline-block opacity-50" />
+                                )
+                            )}
                         </TableHead>
                     ))}
                     <TableHead className="text-right w-[120px]">操作</TableHead> {/* Actions column */}
@@ -645,3 +690,4 @@ export default function ProductsPage() {
     </div>
   );
 }
+ 
