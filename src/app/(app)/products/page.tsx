@@ -9,13 +9,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { 
     PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, 
-    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown
+    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown,
+    Download // Added Download icon
 } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
@@ -215,7 +216,7 @@ function ProductRow({
   const numberOfTotalColumns = 1 + numberOfVisibleDataColumns + 1; // expand icon, data columns, actions
 
   return (
-    <React.Fragment key={product.id}>
+    <React.Fragment>
       <TableRow key={`${product.id}-main`}>
         <TableCell className="w-[50px]">
             <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
@@ -292,9 +293,9 @@ export default function ProductsPage() {
     if (storedVisibleColumns) {
       try {
         const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
-        const validatedColumns = { ...initialVisibleColumns }; // Start with defaults
+        const validatedColumns = { ...initialVisibleColumns }; 
         for (const colDef of ALL_PRODUCT_COLUMNS) {
-            if (colDef.id === 'name') { // 'name' column is always visible
+            if (colDef.id === 'name') { 
                 validatedColumns[colDef.id] = true;
             } else if (parsedColumns.hasOwnProperty(colDef.id)) {
                 validatedColumns[colDef.id] = parsedColumns[colDef.id];
@@ -303,16 +304,14 @@ export default function ProductsPage() {
         setVisibleColumns(validatedColumns);
       } catch (e) {
         console.error("Failed to parse visible columns from localStorage", e);
-        // Fallback to initialVisibleColumns if parsing fails or data is malformed
         const defaultColsWithFixedName = { ...initialVisibleColumns };
         defaultColsWithFixedName['name'] = true;
         setVisibleColumns(defaultColsWithFixedName);
       }
     } else {
-        // If nothing in localStorage, use initialVisibleColumns (which already has name=true)
         setVisibleColumns(initialVisibleColumns);
     }
-  }, [initialVisibleColumns]); // Only depends on initialVisibleColumns
+  }, [initialVisibleColumns]); 
 
   useEffect(() => {
     if (hasMounted) {
@@ -324,14 +323,12 @@ export default function ProductsPage() {
   const handleSort = (columnKey: ProductColumnKey) => {
     setSortConfig(prevSortConfig => {
       if (prevSortConfig.key === columnKey) {
-        // Cycle: descending -> ascending -> no sort
         if (prevSortConfig.direction === 'descending') {
           return { key: columnKey, direction: 'ascending' };
-        } else { // Was 'ascending'
-          return { key: null, direction: 'descending' }; // Cancel sort for this key
+        } else { 
+          return { key: null, direction: 'descending' }; 
         }
       } else {
-        // New column clicked, start with descending
         return { key: columnKey, direction: 'descending' };
       }
     });
@@ -355,7 +352,6 @@ export default function ProductsPage() {
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
       if (columnDefinition && columnDefinition.sortable) {
-        // Create a new array to sort, preserving the original order of tempProducts for next time
         tempProducts = [...tempProducts].sort((a, b) => {
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
@@ -367,11 +363,11 @@ export default function ProductsPage() {
             valA = Number(valA) || 0;
             valB = Number(valB) || 0;
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else if (columnDefinition.isDate && valA && valB) { // Ensure valA and valB are not null for dates
+          } else if (columnDefinition.isDate && valA && valB) { 
             valA = parseISO(valA as string).getTime();
             valB = parseISO(valB as string).getTime();
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else { // string or other non-numeric/non-date
+          } else { 
             valA = String(valA || '').toLowerCase();
             valB = String(valB || '').toLowerCase();
             return sortConfig.direction === 'ascending' ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN');
@@ -421,14 +417,105 @@ export default function ProductsPage() {
   
   const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]);
 
+  const handleExportToCSV = useCallback(() => {
+    const activeProductsWithDetails = products
+      .filter(p => !p.isArchived)
+      .map(p => ({ product: p, details: getProductStockDetails(p.id) }));
+
+    if (activeProductsWithDetails.length === 0) {
+      alert("没有活动产品可供导出。");
+      return;
+    }
+
+    const csvRows: string[][] = [];
+    // Headers
+    const headers = [
+      "产品ID", "产品名称", "类别", "单位", "保质期(天)", "预警阈值", "创建日期", "是否已归档",
+      "产品总库存", "产品总价值(¥)",
+      "批次ID", "批次生产日期", "批次过期日期", "批次初始数量", "批次当前数量", "批次单位成本(¥)"
+    ];
+    csvRows.push(headers);
+
+    const formatDateForCSV = (dateString: string | null) => {
+        return dateString ? format(parseISO(dateString), "yyyy-MM-dd HH:mm:ss") : "";
+    };
+    
+    const formatCategoryForCSV = (category: ProductCategory) => {
+        return category === "INGREDIENT" ? "食材" : "非食材";
+    };
+
+
+    activeProductsWithDetails.forEach(({ product, details }) => {
+      const commonProductData = [
+        product.id,
+        product.name,
+        formatCategoryForCSV(product.category),
+        product.unit,
+        product.category === 'INGREDIENT' && product.shelfLifeDays ? String(product.shelfLifeDays) : "",
+        String(product.lowStockThreshold),
+        formatDateForCSV(product.createdAt),
+        product.isArchived ? "是" : "否",
+        String(details.totalQuantity),
+        details.totalValue.toFixed(2),
+      ];
+
+      if (details.batches.length > 0) {
+        details.batches.forEach(batch => {
+          csvRows.push([
+            ...commonProductData,
+            batch.id,
+            formatDateForCSV(batch.productionDate),
+            formatDateForCSV(batch.expiryDate),
+            String(batch.initialQuantity),
+            String(batch.currentQuantity),
+            batch.unitCost.toFixed(2)
+          ]);
+        });
+      } else {
+        // Product with no batches
+        csvRows.push([
+          ...commonProductData,
+          "", "", "", "", "", "" // Empty batch fields
+        ]);
+      }
+    });
+
+    const csvString = csvRows.map(row => 
+        row.map(field => {
+            const strField = String(field === null || field === undefined ? "" : field);
+            // Escape double quotes by doubling them, and enclose field in double quotes if it contains comma, newline or double quote
+            if (strField.includes(',') || strField.includes('\n') || strField.includes('"')) {
+                return `"${strField.replace(/"/g, '""')}"`;
+            }
+            return strField;
+        }).join(',')
+    ).join('\n');
+
+    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); // \uFEFF for BOM to help Excel with UTF-8
+    const link = document.createElement("a");
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `傲慢与偏见咖啡庄园_产品明细_${format(new Date(), "yyyyMMdd_HHmmss")}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+  }, [products, getProductStockDetails]);
+
+
   if (!hasMounted || isLoadingProducts) {
-    // Skeleton UI - keep this for loading states
     const skeletonColumnCount = ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).length;
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <h1 className="text-3xl font-bold flex items-center gap-2"><Package className="h-8 w-8" /> 产品管理</h1>
-          <Skeleton className="h-10 w-[140px]" /> 
+          <div className="flex gap-2">
+             <Skeleton className="h-10 w-[120px]" /> 
+             <Skeleton className="h-10 w-[140px]" /> 
+          </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
           <Skeleton className="h-10 flex-grow" /> 
@@ -460,7 +547,7 @@ export default function ProductsPage() {
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
                       {Array.from({ length: skeletonColumnCount }).map((_, colIdx) => (
                         <TableCell key={`skel-cell-${i}-${colIdx}`} >
-                            {colIdx === 0 ? // Assuming name is the first visible column
+                            {colIdx === 0 ? 
                                 (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) : 
                                 (<Skeleton className="h-5 w-16" />)
                             }
@@ -477,7 +564,7 @@ export default function ProductsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-         {productToEdit && ( // Keep this for edit functionality during loading, though it might not be ideal UX
+         {productToEdit && ( 
             <EditProductForm 
                 product={productToEdit}
                 isOpen={isEditModalOpen}
@@ -490,13 +577,18 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <h1 className="text-3xl font-bold flex items-center gap-2"><Package className="h-8 w-8" /> 产品管理</h1>
-        <Button asChild>
-          <Link href="/products/add">
-            <PlusCircle className="mr-2 h-4 w-4" /> 添加新产品
-          </Link>
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={handleExportToCSV} variant="outline">
+            <Download className="mr-2 h-4 w-4" /> 导出为CSV
+          </Button>
+          <Button asChild>
+            <Link href="/products/add">
+              <PlusCircle className="mr-2 h-4 w-4" /> 添加新产品
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 items-stretch">
@@ -691,3 +783,5 @@ export default function ProductsPage() {
   );
 }
  
+
+    
