@@ -4,14 +4,20 @@ import { useEffect } from 'react';
 
 export function ThemeInitializer() {
   useEffect(() => {
+    // Apply theme (dark/light)
     const storedTheme = localStorage.getItem('theme');
     if (storedTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
-      // Default to light theme if nothing is stored or if it's 'light'
       document.documentElement.classList.remove('dark');
-      // Optionally, you could set localStorage to 'light' here if it's not set
-      // localStorage.setItem('theme', 'light');
+    }
+
+    // Apply text size mode
+    const storedTextSizeMode = localStorage.getItem('textSizeMode');
+    if (storedTextSizeMode === 'large') {
+      document.documentElement.classList.add('large-text-mode');
+    } else {
+      document.documentElement.classList.remove('large-text-mode');
     }
   }, []);
 

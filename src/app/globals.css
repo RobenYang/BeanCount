@@ -101,6 +101,10 @@ body {
     --sidebar-border: var(--border); /* Inherits */
     --sidebar-ring: var(--ring); /* Inherits */
   }
+
+  html.large-text-mode {
+    font-size: 112.5%; /* Increases base font size by 12.5% for large text mode. Standard 16px becomes 18px. */
+  }
 }
 
 @layer base {

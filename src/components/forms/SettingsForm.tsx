@@ -15,16 +15,18 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch"; // Import Switch
 import { useInventory } from "@/contexts/InventoryContext";
 import type { AppSettings } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Save, Palette, Loader2, AlertTriangle, Download, Trash2, BookText } from "lucide-react";
+import { Save, Palette, Loader2, AlertTriangle, Download, Trash2, BookText, Accessibility } from "lucide-react"; // Added Accessibility icon
 import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { useErrorLogger } from "@/contexts/ErrorContext"; // Import useErrorLogger
+import { useErrorLogger } from "@/contexts/ErrorContext"; 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
+import { formatISO } from 'date-fns';
 
 
 const settingsFormSchema = z.object({
@@ -36,19 +38,18 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
-// Removed DEFAULT_APP_SETTINGS as it's now handled by InventoryContext's initial state or API fetch
-// const DEFAULT_APP_SETTINGS: AppSettings = { expiryWarningDays: 7 };
 
 export function SettingsForm() {
   const { appSettings, updateAppSettings, isLoadingSettings } = useInventory();
-  const { errorLogs, exportErrorLogs, clearErrorLogs } = useErrorLogger(); // Get error log functions
+  const { errorLogs, exportErrorLogs, clearErrorLogs } = useErrorLogger(); 
   const { currentUser } = useAuth();
   const [selectedTheme, setSelectedTheme] = useState<string>('light');
+  const [isLargeTextMode, setIsLargeTextMode] = useState<boolean>(false); // State for large text mode
 
   const settingsHookForm = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
     defaultValues: { 
-      expiryWarningDays: appSettings?.expiryWarningDays || 7, // Initialize with context or a fallback
+      expiryWarningDays: appSettings?.expiryWarningDays || 7, 
     },
   });
 
@@ -61,17 +62,24 @@ export function SettingsForm() {
   }, [appSettings, isLoadingSettings, settingsHookForm]);
 
   useEffect(() => {
+    // Theme Initializer
     const storedTheme = localStorage.getItem('theme');
     if (storedTheme) {
       setSelectedTheme(storedTheme);
-      if (storedTheme === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
+      // Actual class application is done by ThemeInitializer.tsx
     } else {
+      // Fallback to system preference or default if not set
       const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
       setSelectedTheme(currentTheme);
+    }
+
+    // Large Text Mode Initializer
+    const storedTextSizeMode = localStorage.getItem('textSizeMode');
+    if (storedTextSizeMode === 'large') {
+      setIsLargeTextMode(true);
+      // Actual class application is done by ThemeInitializer.tsx
+    } else {
+      setIsLargeTextMode(false);
     }
   }, []);
 
@@ -82,6 +90,16 @@ export function SettingsForm() {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const handleLargeTextModeChange = (checked: boolean) => {
+    setIsLargeTextMode(checked);
+    localStorage.setItem('textSizeMode', checked ? 'large' : 'normal');
+    if (checked) {
+      document.documentElement.classList.add('large-text-mode');
+    } else {
+      document.documentElement.classList.remove('large-text-mode');
     }
   };
 
@@ -170,6 +188,29 @@ export function SettingsForm() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Accessibility className="h-5 w-5" />
+            辅助功能
+          </CardTitle>
+          <CardDescription>
+            调整文本大小以获得更好的可读性。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="large-text-mode"
+              checked={isLargeTextMode}
+              onCheckedChange={handleLargeTextModeChange}
+            />
+            <Label htmlFor="large-text-mode" className="cursor-pointer">启用大字模式</Label>
+          </div>
+        </CardContent>
+      </Card>
+
+
       {currentUser?.isSuperAdmin && (
         <Card>
           <CardHeader>
@@ -193,7 +234,7 @@ export function SettingsForm() {
             {errorLogs.length > 0 && (
               <ScrollArea className="h-64 w-full rounded-md border p-3">
                 <div className="space-y-3">
-                  {errorLogs.slice().reverse().map(log => ( // Show newest first
+                  {errorLogs.slice().reverse().map(log => ( 
                     <div key={log.id} className="p-2 border rounded-md bg-background text-xs">
                       <p><strong>时间:</strong> {formatISO(new Date(log.timestamp), { representation: 'complete' })}</p>
                       <p><strong>类型:</strong> {log.errorType}</p>
