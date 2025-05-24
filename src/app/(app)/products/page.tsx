@@ -10,16 +10,17 @@ import { Badge } from "@/components/ui/badge";
 import { 
     PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, 
     Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown,
-    Download // Added Download icon
+    Download, FileText // Added Download and FileText icons
 } from "lucide-react";
 import Link from "next/link";
-import { format, parseISO, differenceInDays } from "date-fns";
+import { format, parseISO, differenceInDays, isSameDay, startOfDay } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
+import { DailyStockReportModal } from "@/components/modals/DailyStockReportModal"; // Import the new modal
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -216,8 +217,8 @@ function ProductRow({
   const numberOfTotalColumns = 1 + numberOfVisibleDataColumns + 1; // expand icon, data columns, actions
 
   return (
-    <React.Fragment>
-      <TableRow key={`${product.id}-main`}>
+    <>
+      <TableRow key={`${product.id}-main`} >
         <TableCell className="w-[50px]">
             <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -256,7 +257,7 @@ function ProductRow({
           productName={product.name}
         />
       )}
-    </React.Fragment>
+    </>
   );
 }
 
@@ -267,20 +268,21 @@ type SortConfig = {
 
 
 export default function ProductsPage() {
-  const { products, archiveProduct, unarchiveProduct, isLoadingProducts, getProductStockDetails } = useInventory();
+  const { products, archiveProduct, unarchiveProduct, isLoadingProducts, getProductStockDetails, transactions } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
+  const [isDailyReportModalOpen, setIsDailyReportModalOpen] = useState(false); // State for daily report modal
 
   const initialVisibleColumns = useMemo(() => {
     const defaults = ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
         acc[col.id] = col.defaultVisible;
         return acc;
     }, {} as Record<ProductColumnKey, boolean>);
-    defaults['name'] = true; // Ensure 'name' is always true by default
+    defaults['name'] = true; 
     return defaults;
   }, []);
   
@@ -428,7 +430,6 @@ export default function ProductsPage() {
     }
 
     const csvRows: string[][] = [];
-    // Headers
     const headers = [
       "产品ID", "产品名称", "类别", "单位", "保质期(天)", "预警阈值", "创建日期", "是否已归档",
       "产品总库存", "产品总价值(¥)",
@@ -443,7 +444,6 @@ export default function ProductsPage() {
     const formatCategoryForCSV = (category: ProductCategory) => {
         return category === "INGREDIENT" ? "食材" : "非食材";
     };
-
 
     activeProductsWithDetails.forEach(({ product, details }) => {
       const commonProductData = [
@@ -472,10 +472,9 @@ export default function ProductsPage() {
           ]);
         });
       } else {
-        // Product with no batches
         csvRows.push([
           ...commonProductData,
-          "", "", "", "", "", "" // Empty batch fields
+          "", "", "", "", "", "" 
         ]);
       }
     });
@@ -483,7 +482,6 @@ export default function ProductsPage() {
     const csvString = csvRows.map(row => 
         row.map(field => {
             const strField = String(field === null || field === undefined ? "" : field);
-            // Escape double quotes by doubling them, and enclose field in double quotes if it contains comma, newline or double quote
             if (strField.includes(',') || strField.includes('\n') || strField.includes('"')) {
                 return `"${strField.replace(/"/g, '""')}"`;
             }
@@ -491,7 +489,7 @@ export default function ProductsPage() {
         }).join(',')
     ).join('\n');
 
-    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); // \uFEFF for BOM to help Excel with UTF-8
+    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); 
     const link = document.createElement("a");
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob);
@@ -515,6 +513,7 @@ export default function ProductsPage() {
           <div className="flex gap-2">
              <Skeleton className="h-10 w-[120px]" /> 
              <Skeleton className="h-10 w-[140px]" /> 
+             <Skeleton className="h-10 w-[160px]" />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
@@ -580,6 +579,9 @@ export default function ProductsPage() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <h1 className="text-3xl font-bold flex items-center gap-2"><Package className="h-8 w-8" /> 产品管理</h1>
         <div className="flex gap-2 flex-wrap">
+          <Button onClick={() => setIsDailyReportModalOpen(true)} variant="outline">
+            <FileText className="mr-2 h-4 w-4" /> 生成当日报告
+          </Button>
           <Button onClick={handleExportToCSV} variant="outline">
             <Download className="mr-2 h-4 w-4" /> 导出为CSV
           </Button>
@@ -779,9 +781,17 @@ export default function ProductsPage() {
             onClose={handleCloseEditModal}
         />
       )}
+      {isDailyReportModalOpen && (
+        <DailyStockReportModal
+          isOpen={isDailyReportModalOpen}
+          onClose={() => setIsDailyReportModalOpen(false)}
+          products={products.filter(p => !p.isArchived)} // Pass active products
+          transactions={transactions}
+          currentDate={new Date()} // Pass current date for the report
+          getProductStockDetails={getProductStockDetails}
+        />
+      )}
     </div>
   );
 }
- 
-
     
