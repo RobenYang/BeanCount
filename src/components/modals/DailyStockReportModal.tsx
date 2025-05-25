@@ -16,7 +16,7 @@ interface DailyStockReportModalProps {
   products: Product[];
   transactions: Transaction[];
   currentDate: Date;
-  getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: any[] }; // Use 'any[]' for batches if not strictly typed here
+  getProductStockDetails: (productId: string) => { totalQuantity: number; totalValue: number; batches: any[] };
 }
 
 export function DailyStockReportModal({ 
@@ -34,19 +34,23 @@ export function DailyStockReportModal({
     isSameDay(parseISO(t.timestamp), currentDate)
   );
 
-  const todaysIntake = todaysTransactions.filter(t => t.type === 'IN');
-  const todaysOutflow = todaysTransactions.filter(t => t.type === 'OUT');
+  const todaysIntake = todaysTransactions.filter(t => t.type === 'IN' || (t.type === 'OUT' && t.isCorrectionIncrease));
+  const todaysOutflow = todaysTransactions.filter(t => t.type === 'OUT' && !t.isCorrectionIncrease);
 
   const handlePrint = () => {
-    // Temporarily hide non-printable elements
     const elementsToHide = document.querySelectorAll('.no-print');
     elementsToHide.forEach(el => (el as HTMLElement).style.display = 'none');
     
     window.print();
 
-    // Restore hidden elements
     elementsToHide.forEach(el => (el as HTMLElement).style.display = '');
   };
+
+  const commonTableCellClass = "py-1.5 px-2 text-xs @print:py-0.5 @print:px-1";
+  const commonTableHeadClass = "py-2 px-2 text-xs @print:py-1 @print:px-1";
+  const sectionMarginBottom = "mb-4 @print:mb-2";
+  const sectionHeaderClass = "text-base font-semibold mb-1 border-b pb-0.5 @print:text-sm @print:mb-0.5";
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -60,15 +64,20 @@ export function DailyStockReportModal({
         
         <ScrollArea className="flex-1 @print:overflow-visible @print:h-auto">
           <div className="p-1 @print:p-0" id="daily-report-content">
-            <section className="mb-6">
-              <h3 className="text-lg font-semibold mb-2 border-b pb-1">当前库存水平</h3>
+            <div className="text-center mb-2 @print:mb-1">
+                <h2 className="text-lg font-bold @print:text-base">傲慢与偏见咖啡庄园 - 每日库存报告</h2>
+                <p className="text-sm @print:text-xs">{format(currentDate, "yyyy年M月d日 EEEE", { locale: zhCN })}</p>
+            </div>
+
+            <section className={sectionMarginBottom}>
+              <h3 className={sectionHeaderClass}>当前库存水平</h3>
               {activeProducts.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>产品名称</TableHead>
-                      <TableHead className="text-right">当前数量</TableHead>
-                      <TableHead>单位</TableHead>
+                      <TableHead className={commonTableHeadClass}>产品名称</TableHead>
+                      <TableHead className={`${commonTableHeadClass} text-right`}>当前数量</TableHead>
+                      <TableHead className={commonTableHeadClass}>单位</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -76,73 +85,73 @@ export function DailyStockReportModal({
                       const { totalQuantity } = getProductStockDetails(product.id);
                       return (
                         <TableRow key={product.id}>
-                          <TableCell>{product.name}</TableCell>
-                          <TableCell className="text-right">{totalQuantity}</TableCell>
-                          <TableCell>{product.unit}</TableCell>
+                          <TableCell className={commonTableCellClass}>{product.name}</TableCell>
+                          <TableCell className={`${commonTableCellClass} text-right`}>{totalQuantity}</TableCell>
+                          <TableCell className={commonTableCellClass}>{product.unit}</TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-sm text-muted-foreground">暂无活动产品。</p>
+                <p className="text-xs text-muted-foreground @print:text-xs">暂无活动产品。</p>
               )}
             </section>
 
-            <section className="mb-6">
-              <h3 className="text-lg font-semibold mb-2 border-b pb-1">今日入库明细 ({todaysIntake.length})</h3>
+            <section className={sectionMarginBottom}>
+              <h3 className={sectionHeaderClass}>今日入库明细 ({todaysIntake.length})</h3>
               {todaysIntake.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>时间</TableHead>
-                      <TableHead>产品名称</TableHead>
-                      <TableHead>批次ID</TableHead>
-                      <TableHead className="text-right">数量</TableHead>
-                      <TableHead className="text-right">单位成本(¥)</TableHead>
+                      <TableHead className={`${commonTableHeadClass} w-[50px]`}>时间</TableHead>
+                      <TableHead className={commonTableHeadClass}>产品名称</TableHead>
+                      <TableHead className={`${commonTableHeadClass} w-[80px]`}>批次ID</TableHead>
+                      <TableHead className={`${commonTableHeadClass} text-right w-[60px]`}>数量</TableHead>
+                      <TableHead className={`${commonTableHeadClass} text-right w-[70px]`}>单位成本</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {todaysIntake.map(t => (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs">{format(parseISO(t.timestamp), "HH:mm:ss", { locale: zhCN })}</TableCell>
-                        <TableCell>{t.productName}</TableCell>
-                        <TableCell className="text-xs truncate max-w-[80px]" title={t.batchId}>{t.batchId || 'N/A'}</TableCell>
-                        <TableCell className="text-right">+{t.quantity}</TableCell>
-                        <TableCell className="text-right">{t.unitCostAtTransaction?.toFixed(2) || 'N/A'}</TableCell>
+                        <TableCell className={commonTableCellClass}>{format(parseISO(t.timestamp), "HH:mm", { locale: zhCN })}</TableCell>
+                        <TableCell className={commonTableCellClass}>{t.productName}</TableCell>
+                        <TableCell className={`${commonTableCellClass} truncate max-w-[80px]`} title={t.batchId || undefined}>{t.batchId || 'N/A'}</TableCell>
+                        <TableCell className={`${commonTableCellClass} text-right`}>{t.isCorrectionIncrease ? `+${t.quantity}` : (t.type === 'IN' ? `+${t.quantity}`: `${t.quantity}`)}</TableCell>
+                        <TableCell className={`${commonTableCellClass} text-right`}>¥{t.unitCostAtTransaction?.toFixed(2) || 'N/A'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-sm text-muted-foreground">今日无入库记录。</p>
+                <p className="text-xs text-muted-foreground @print:text-xs">今日无入库记录。</p>
               )}
             </section>
 
             <section>
-              <h3 className="text-lg font-semibold mb-2 border-b pb-1">今日出库/消耗明细 ({todaysOutflow.length})</h3>
+              <h3 className={sectionHeaderClass}>今日出库/消耗明细 ({todaysOutflow.length})</h3>
               {todaysOutflow.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>时间</TableHead>
-                      <TableHead>产品名称</TableHead>
-                      <TableHead>批次ID</TableHead>
-                      <TableHead className="text-right">数量</TableHead>
-                      <TableHead>原因</TableHead>
-                      <TableHead className="text-right">价值(¥)</TableHead>
+                      <TableHead className={`${commonTableHeadClass} w-[50px]`}>时间</TableHead>
+                      <TableHead className={commonTableHeadClass}>产品名称</TableHead>
+                      <TableHead className={`${commonTableHeadClass} w-[80px]`}>批次ID</TableHead>
+                      <TableHead className={`${commonTableHeadClass} text-right w-[60px]`}>数量</TableHead>
+                      <TableHead className={`${commonTableHeadClass} w-[70px]`}>原因</TableHead>
+                      <TableHead className={`${commonTableHeadClass} text-right w-[70px]`}>价值</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {todaysOutflow.map(t => (
                       <TableRow key={t.id}>
-                        <TableCell className="text-xs">{format(parseISO(t.timestamp), "HH:mm:ss", { locale: zhCN })}</TableCell>
-                        <TableCell>{t.productName}</TableCell>
-                        <TableCell className="text-xs truncate max-w-[80px]" title={t.batchId}>{t.batchId || 'N/A'}</TableCell>
-                        <TableCell className="text-right">{t.isCorrectionIncrease ? `+${t.quantity}` : `-${t.quantity}`}</TableCell>
-                        <TableCell>{t.reason || 'N/A'}</TableCell>
-                        <TableCell className="text-right">
-                          {t.unitCostAtTransaction !== undefined && t.unitCostAtTransaction !== null 
+                        <TableCell className={commonTableCellClass}>{format(parseISO(t.timestamp), "HH:mm", { locale: zhCN })}</TableCell>
+                        <TableCell className={commonTableCellClass}>{t.productName}</TableCell>
+                        <TableCell className={`${commonTableCellClass} truncate max-w-[80px]`} title={t.batchId || undefined}>{t.batchId || 'N/A'}</TableCell>
+                        <TableCell className={`${commonTableCellClass} text-right`}>-{t.quantity}</TableCell>
+                        <TableCell className={commonTableCellClass}>{t.reason || 'N/A'}</TableCell>
+                        <TableCell className={`${commonTableCellClass} text-right`}>
+                          ¥{t.unitCostAtTransaction !== undefined && t.unitCostAtTransaction !== null 
                             ? (t.quantity * t.unitCostAtTransaction).toFixed(2) 
                             : 'N/A'}
                         </TableCell>
@@ -151,9 +160,10 @@ export function DailyStockReportModal({
                   </TableBody>
                 </Table>
               ) : (
-                <p className="text-sm text-muted-foreground">今日无出库/消耗记录。</p>
+                <p className="text-xs text-muted-foreground @print:text-xs">今日无出库/消耗记录。</p>
               )}
             </section>
+            <p className="text-xs text-muted-foreground mt-4 text-center @print:mt-2 @print:text-[8px]">报告生成于: {format(new Date(), "yyyy-MM-dd HH:mm:ss")}</p>
           </div>
         </ScrollArea>
 
@@ -167,3 +177,4 @@ export function DailyStockReportModal({
     </Dialog>
   );
 }
+
