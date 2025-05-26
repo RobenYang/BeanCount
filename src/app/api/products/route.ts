@@ -12,7 +12,7 @@ import { sql } from '@vercel/postgres';
 //     category TEXT NOT NULL, -- 'INGREDIENT' or 'NON_INGREDIENT'
 //     unit TEXT NOT NULL,
 //     shelf_life_days INTEGER, -- Nullable for NON_INGREDIENT
-//     low_stock_threshold INTEGER NOT NULL,
+//     low_stock_threshold INTEGER NOT NULL, // This column should exist in your DB table
 //     image_url TEXT,
 //     created_at TIMESTAMPTZ NOT NULL,
 //     is_archived BOOLEAN NOT NULL DEFAULT FALSE
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { rows } = await sql`
+    const { rows } = await sql<Product>`
       SELECT 
         id, 
         name, 
@@ -72,12 +72,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>;
+  let productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'> & { lowStockThreshold: number }; // Ensure lowStockThreshold is expected
   try {
     productData = await request.json();
   } catch (e) {
     return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
+
+  // Validation for required fields including lowStockThreshold
+  if (!productData.name || !productData.category || !productData.unit || productData.lowStockThreshold === undefined) {
+    return NextResponse.json({ error: 'Missing required product fields (name, category, unit, lowStockThreshold are required)' }, { status: 400 });
+  }
+  if (typeof productData.lowStockThreshold !== 'number' || productData.lowStockThreshold < 0) {
+    return NextResponse.json({ error: 'Invalid lowStockThreshold, must be a non-negative number.' }, { status: 400 });
+  }
+
 
   if (!process.env.POSTGRES_URL) {
     console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for POST /api/products. Simulating product creation.");
@@ -88,15 +97,12 @@ export async function POST(request: Request) {
       isArchived: false,
       shelfLifeDays: productData.category === 'INGREDIENT' ? (productData.shelfLifeDays || 0) : null,
       imageUrl: productData.imageUrl || null,
+      // lowStockThreshold: productData.lowStockThreshold, // already in productData
     };
     return NextResponse.json(newProduct, { status: 201 });
   }
   
   try {
-    if (!productData.name || !productData.category || !productData.unit || productData.lowStockThreshold === undefined) {
-      return NextResponse.json({ error: 'Missing required product fields' }, { status: 400 });
-    }
-    
     const shelfLifeDays = productData.category === 'INGREDIENT' ? (productData.shelfLifeDays || 0) : null;
     const id = nanoid();
     const createdAt = new Date().toISOString();
@@ -111,7 +117,7 @@ export async function POST(request: Request) {
         ${productData.category}, 
         ${productData.unit}, 
         ${shelfLifeDays}, 
-        ${productData.lowStockThreshold}, 
+        ${productData.lowStockThreshold}, -- Ensure this is passed to SQL
         ${imageUrl}, 
         ${createdAt}, 
         ${isArchived}
@@ -122,7 +128,7 @@ export async function POST(request: Request) {
       name: productData.name,
       category: productData.category,
       unit: productData.unit,
-      lowStockThreshold: productData.lowStockThreshold,
+      lowStockThreshold: productData.lowStockThreshold, // Ensure this is part of the returned object
       shelfLifeDays,
       imageUrl,
       id,

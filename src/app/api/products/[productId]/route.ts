@@ -29,12 +29,11 @@ export async function GET(request: Request, { params }: { params: { productId: s
 
   if (!process.env.POSTGRES_URL) {
     console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for GET /api/products/${productId}. Returning not found.`);
-    // In dev mode without DB, we can't find a specific product, so 404 is appropriate.
     return NextResponse.json({ error: 'Product not found in DB-less dev mode' }, { status: 404 });
   }
 
   try {
-    const { rows } = await sql`
+    const { rows } = await sql<Product>`
       SELECT 
         id, name, category, unit, 
         shelf_life_days AS "shelfLifeDays", 
@@ -60,7 +59,8 @@ export async function PUT(request: Request, { params }: { params: { productId: s
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { productId } = params;
-  let productData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>;
+  // Expecting lowStockThreshold in the payload now
+  let productData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>> & { lowStockThreshold?: number };
   try {
     productData = await request.json();
   } catch (e) {
@@ -69,17 +69,16 @@ export async function PUT(request: Request, { params }: { params: { productId: s
   
   if (!process.env.POSTGRES_URL) {
     console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for PUT /api/products/${productId}. Simulating update.`);
-    // Simulate finding and returning an updated product for dev mode
     const mockUpdatedProduct: Product = {
         id: productId,
         name: productData.name || "Dev Product Name",
-        category: "INGREDIENT", // Mock category, actual category isn't updatable via this form
+        category: "INGREDIENT", 
         unit: productData.unit || "unit",
         shelfLifeDays: productData.shelfLifeDays !== undefined ? productData.shelfLifeDays : 0,
-        lowStockThreshold: productData.lowStockThreshold !== undefined ? productData.lowStockThreshold : 0,
+        lowStockThreshold: productData.lowStockThreshold !== undefined ? productData.lowStockThreshold : 0, // Include in mock
         imageUrl: productData.imageUrl || null,
         createdAt: new Date().toISOString(),
-        isArchived: false, // Assuming not changing archive status here
+        isArchived: false, 
     };
     return NextResponse.json(mockUpdatedProduct);
   }
@@ -87,8 +86,12 @@ export async function PUT(request: Request, { params }: { params: { productId: s
   try {
     const { name, unit, shelfLifeDays, lowStockThreshold, imageUrl } = productData;
 
+    // Ensure lowStockThreshold is validated if present, or handle if it's optional for update
     if (!name || !unit || lowStockThreshold === undefined) {
-      return NextResponse.json({ error: 'Missing required fields for product update (name, unit, lowStockThreshold)' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing required fields for product update (name, unit, lowStockThreshold are required)' }, { status: 400 });
+    }
+    if (typeof lowStockThreshold !== 'number' || lowStockThreshold < 0) {
+        return NextResponse.json({ error: 'Invalid lowStockThreshold, must be a non-negative number.' }, { status: 400 });
     }
     
     const currentProductResult = await sql`SELECT category FROM products WHERE id = ${productId}`;
@@ -97,7 +100,8 @@ export async function PUT(request: Request, { params }: { params: { productId: s
     }
     const category = currentProductResult.rows[0].category;
 
-    const shelfLifeDaysForDb = category === 'INGREDIENT' ? (shelfLifeDays || 0) : null;
+    const shelfLifeDaysForDb = category === 'INGREDIENT' ? (shelfLifeDays !== undefined ? shelfLifeDays : null) : null;
+
 
     const result = await sql`
       UPDATE products
@@ -105,7 +109,7 @@ export async function PUT(request: Request, { params }: { params: { productId: s
         name = ${name}, 
         unit = ${unit}, 
         shelf_life_days = ${shelfLifeDaysForDb}, 
-        low_stock_threshold = ${lowStockThreshold}, 
+        low_stock_threshold = ${lowStockThreshold}, -- Update low_stock_threshold
         image_url = ${imageUrl || null}
       WHERE id = ${productId}
       RETURNING 
@@ -143,14 +147,13 @@ export async function PATCH(request: Request, { params }: { params: { productId:
 
   if (!process.env.POSTGRES_URL) {
     console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for PATCH /api/products/${productId}. Simulating archive/unarchive.`);
-    // Simulate finding and returning an updated product for dev mode
      const mockPatchedProduct: Product = {
         id: productId,
         name: "Dev Product Name (Patched)",
         category: "INGREDIENT",
         unit: "unit",
         shelfLifeDays: 0,
-        lowStockThreshold: 0,
+        lowStockThreshold: 0, // include in mock
         imageUrl: null,
         createdAt: new Date().toISOString(),
         isArchived: isArchived, 
@@ -186,11 +189,10 @@ export async function PATCH(request: Request, { params }: { params: { productId:
   }
 }
 
+// DELETE route remains unchanged as hard delete is not implemented
 export async function DELETE(request: Request, { params }: { params: { productId: string } }) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  // const { productId } = params;
-  // Hard delete not implemented.
   return NextResponse.json({ message: 'Hard delete not implemented. Use PATCH to archive/unarchive.' }, { status: 405 });
 }

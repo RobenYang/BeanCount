@@ -34,7 +34,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Attempt to fetch existing settings
     const { rows } = await sql`
       SELECT 
         expiry_warning_days AS "expiryWarningDays",
@@ -45,15 +44,12 @@ export async function GET(request: Request) {
 
     if (rows.length > 0) {
       const settingsFromDb = rows[0];
-      // Ensure both fields are present, falling back to defaults if a column was null/missing from DB
       const completeSettings: AppSettings = {
           expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
           depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
       };
       return NextResponse.json(completeSettings);
     } else {
-      // No settings row found (id=1). This could be the first run or the row was deleted.
-      // Attempt to insert/update defaults to ensure the row id=1 exists with proper values.
       console.log("No settings found in DB (id=1) for app_settings, attempting to insert/update default values.");
       await sql`
         INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) 
@@ -63,7 +59,6 @@ export async function GET(request: Request) {
           depletion_warning_days = EXCLUDED.depletion_warning_days;
       `;
       
-      // Fetch again after ensuring the row exists
       const freshFetch = await sql`
         SELECT 
             expiry_warning_days AS "expiryWarningDays",
@@ -72,21 +67,21 @@ export async function GET(request: Request) {
       
       if (freshFetch.rows.length > 0) {
         const settingsFromDb = freshFetch.rows[0];
-        // Ensure both fields are present after fresh fetch as well
         const completeSettings: AppSettings = {
             expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
             depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
         };
         return NextResponse.json(completeSettings);
       } else {
-        // This case should ideally not be reached if the INSERT ON CONFLICT DO UPDATE was successful.
-        console.error("CRITICAL: Failed to read default settings after attempting to ensure row id=1 exists in app_settings.");
-        return NextResponse.json(DEFAULT_DEV_SETTINGS); // Fallback to app defaults
+        console.error("CRITICAL: Failed to read default settings after attempting to ensure row id=1 exists in app_settings. Returning app defaults.");
+        return NextResponse.json(DEFAULT_DEV_SETTINGS);
       }
     }
   } catch (error) {
     console.error('Failed to fetch/ensure app settings from Postgres:', error);
-    return NextResponse.json({ error: 'Failed to fetch or initialize app settings', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    // Ensure a JSON response even on unhandled errors to prevent client parse issues
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: 'Failed to fetch or initialize app settings from database.', details: errorMessage }, { status: 500 });
   }
 }
 
@@ -109,8 +104,6 @@ export async function PUT(request: Request) {
     const newDevSettings = { ...DEFAULT_DEV_SETTINGS };
     if (expiryWarningDays !== undefined) newDevSettings.expiryWarningDays = expiryWarningDays;
     if (depletionWarningDays !== undefined) newDevSettings.depletionWarningDays = depletionWarningDays;
-    // In DB-less mode, we can't really persist, so this just reflects back.
-    // The actual DEFAULT_DEV_SETTINGS object in memory is not mutated by this path.
     return NextResponse.json(newDevSettings);
   }
 
@@ -135,10 +128,12 @@ export async function PUT(request: Request) {
     if (result.rows.length > 0) {
         return NextResponse.json(result.rows[0]);
     }
+    // This case should ideally not be reached if ON CONFLICT DO UPDATE is used correctly with id=1
     return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
 
   } catch (error) {
     console.error('Failed to update app settings in Postgres:', error);
-    return NextResponse.json({ error: '更新应用设置失败', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: '更新应用设置失败', details: errorMessage }, { status: 500 });
   }
 }
