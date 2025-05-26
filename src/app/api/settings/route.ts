@@ -7,11 +7,12 @@ import type { AppSettings } from '@/lib/types';
 // CREATE TABLE app_settings (
 //     id INTEGER PRIMARY KEY DEFAULT 1,
 //     expiry_warning_days INTEGER NOT NULL DEFAULT 7,
+//     depletion_warning_days INTEGER NOT NULL DEFAULT 5, // Ensure this column exists
 //     CONSTRAINT single_row_check CHECK (id = 1)
 // );
-// INSERT INTO app_settings (id, expiry_warning_days) VALUES (1, 7) ON CONFLICT (id) DO NOTHING;
+// INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) VALUES (1, 7, 5) ON CONFLICT (id) DO NOTHING;
 
-const DEFAULT_DEV_SETTINGS: AppSettings = { expiryWarningDays: 7 };
+const DEFAULT_DEV_SETTINGS: AppSettings = { expiryWarningDays: 7, depletionWarningDays: 5 };
 
 function authenticateRequest(request: Request): boolean {
   const authHeader = request.headers.get('Authorization');
@@ -42,30 +43,38 @@ export async function GET(request: Request) {
 
   try {
     const { rows } = await sql`
-      SELECT expiry_warning_days AS "expiryWarningDays"
+      SELECT 
+        expiry_warning_days AS "expiryWarningDays",
+        depletion_warning_days AS "depletionWarningDays"
       FROM app_settings 
       WHERE id = 1; 
     `;
     if (rows.length === 0) {
-      // If no settings row exists, attempt to insert default and return it
-      // This could happen if the INSERT ON CONFLICT didn't run or if table was cleared
       console.log("No settings found in DB, attempting to insert default app_settings.");
       await sql`
-        INSERT INTO app_settings (id, expiry_warning_days) 
-        VALUES (1, ${DEFAULT_DEV_SETTINGS.expiryWarningDays}) 
+        INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) 
+        VALUES (1, ${DEFAULT_DEV_SETTINGS.expiryWarningDays}, ${DEFAULT_DEV_SETTINGS.depletionWarningDays}) 
         ON CONFLICT (id) DO NOTHING;
       `;
-      // Re-fetch or return default
-      const freshFetch = await sql`SELECT expiry_warning_days AS "expiryWarningDays" FROM app_settings WHERE id = 1;`;
+      const freshFetch = await sql`
+        SELECT 
+            expiry_warning_days AS "expiryWarningDays",
+            depletion_warning_days AS "depletionWarningDays"
+        FROM app_settings WHERE id = 1;`;
       if (freshFetch.rows.length > 0) {
         return NextResponse.json(freshFetch.rows[0]);
       }
-      return NextResponse.json(DEFAULT_DEV_SETTINGS); // Fallback if insert somehow failed silently
+      return NextResponse.json(DEFAULT_DEV_SETTINGS);
     }
-    return NextResponse.json(rows[0]);
+    // Ensure both fields are present, even if one was null in DB (e.g. due to older schema)
+    const settingsFromDb = rows[0];
+    const completeSettings: AppSettings = {
+        expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
+        depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
+    };
+    return NextResponse.json(completeSettings);
   } catch (error) {
     console.error('Failed to fetch app settings from Postgres:', error);
-    // Fallback to default settings on error to prevent UI breakage
     return NextResponse.json(DEFAULT_DEV_SETTINGS, { status: 500 });
   }
 }
@@ -81,40 +90,40 @@ export async function PUT(request: Request) {
   } catch (e) {
     return NextResponse.json({ error: 'Invalid JSON payload for PUT settings' }, { status: 400 });
   }
-  const { expiryWarningDays } = payload;
+  const { expiryWarningDays, depletionWarningDays } = payload;
 
   if (!process.env.POSTGRES_URL) {
     console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for PUT /api/settings. Simulating update.");
-    if (expiryWarningDays !== undefined) {
-        DEFAULT_DEV_SETTINGS.expiryWarningDays = expiryWarningDays; // "Update" in-memory dev default
-    }
+    if (expiryWarningDays !== undefined) DEFAULT_DEV_SETTINGS.expiryWarningDays = expiryWarningDays;
+    if (depletionWarningDays !== undefined) DEFAULT_DEV_SETTINGS.depletionWarningDays = depletionWarningDays;
     return NextResponse.json(DEFAULT_DEV_SETTINGS);
   }
 
-
   try {
     if (expiryWarningDays === undefined || typeof expiryWarningDays !== 'number' || expiryWarningDays < 0) {
-      return NextResponse.json({ error: 'Valid expiryWarningDays (non-negative number) is required.' }, { status: 400 });
+      return NextResponse.json({ error: '有效的临近过期预警天数 (非负数) 为必填项。' }, { status: 400 });
+    }
+    if (depletionWarningDays === undefined || typeof depletionWarningDays !== 'number' || depletionWarningDays < 0) {
+      return NextResponse.json({ error: '有效的预计耗尽预警天数 (非负数) 为必填项。' }, { status: 400 });
     }
 
-    // Ensure the settings row exists, then update.
-    // Using ON CONFLICT DO UPDATE ensures the row is created if it doesn't exist, or updated if it does.
     const result = await sql`
-      INSERT INTO app_settings (id, expiry_warning_days)
-      VALUES (1, ${expiryWarningDays})
+      INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days)
+      VALUES (1, ${expiryWarningDays}, ${depletionWarningDays})
       ON CONFLICT (id) DO UPDATE 
-      SET expiry_warning_days = EXCLUDED.expiry_warning_days
-      RETURNING expiry_warning_days AS "expiryWarningDays";
+      SET 
+        expiry_warning_days = EXCLUDED.expiry_warning_days,
+        depletion_warning_days = EXCLUDED.depletion_warning_days
+      RETURNING expiry_warning_days AS "expiryWarningDays", depletion_warning_days AS "depletionWarningDays";
     `;
     
     if (result.rows.length > 0) {
         return NextResponse.json(result.rows[0]);
     }
-    // This case should ideally not be reached if ON CONFLICT DO UPDATE works as expected
     return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
 
   } catch (error) {
     console.error('Failed to update app settings in Postgres:', error);
-    return NextResponse.json({ error: 'Failed to update app settings', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: '更新应用设置失败', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
