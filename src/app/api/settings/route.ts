@@ -4,15 +4,6 @@ import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import type { AppSettings } from '@/lib/types';
 
-// Ensure this matches your table schema in Neon SQL Editor
-// CREATE TABLE app_settings (
-//     id INTEGER PRIMARY KEY DEFAULT 1,
-//     expiry_warning_days INTEGER NOT NULL DEFAULT 7,
-//     depletion_warning_days INTEGER NOT NULL DEFAULT 5, // Ensure this column exists
-//     CONSTRAINT single_row_check CHECK (id = 1)
-// );
-// INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) VALUES (1, 7, 5) ON CONFLICT (id) DO NOTHING;
-
 const DEFAULT_DEV_SETTINGS: AppSettings = { expiryWarningDays: 7, depletionWarningDays: 5 };
 
 function authenticateRequest(request: Request): boolean {
@@ -43,6 +34,7 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Attempt to fetch existing settings
     const { rows } = await sql`
       SELECT 
         expiry_warning_days AS "expiryWarningDays",
@@ -50,35 +42,51 @@ export async function GET(request: Request) {
       FROM app_settings 
       WHERE id = 1; 
     `;
-    if (rows.length === 0) {
-      console.log("No settings found in DB, attempting to insert default app_settings.");
+
+    if (rows.length > 0) {
+      const settingsFromDb = rows[0];
+      // Ensure both fields are present, falling back to defaults if a column was null/missing from DB
+      const completeSettings: AppSettings = {
+          expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
+          depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
+      };
+      return NextResponse.json(completeSettings);
+    } else {
+      // No settings row found (id=1). This could be the first run or the row was deleted.
+      // Attempt to insert/update defaults to ensure the row id=1 exists with proper values.
+      console.log("No settings found in DB (id=1) for app_settings, attempting to insert/update default values.");
       await sql`
         INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) 
         VALUES (1, ${DEFAULT_DEV_SETTINGS.expiryWarningDays}, ${DEFAULT_DEV_SETTINGS.depletionWarningDays}) 
-        ON CONFLICT (id) DO NOTHING;
+        ON CONFLICT (id) DO UPDATE SET
+          expiry_warning_days = EXCLUDED.expiry_warning_days,
+          depletion_warning_days = EXCLUDED.depletion_warning_days;
       `;
+      
+      // Fetch again after ensuring the row exists
       const freshFetch = await sql`
         SELECT 
             expiry_warning_days AS "expiryWarningDays",
             depletion_warning_days AS "depletionWarningDays"
         FROM app_settings WHERE id = 1;`;
+      
       if (freshFetch.rows.length > 0) {
-        return NextResponse.json(freshFetch.rows[0]);
+        const settingsFromDb = freshFetch.rows[0];
+        // Ensure both fields are present after fresh fetch as well
+        const completeSettings: AppSettings = {
+            expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
+            depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
+        };
+        return NextResponse.json(completeSettings);
+      } else {
+        // This case should ideally not be reached if the INSERT ON CONFLICT DO UPDATE was successful.
+        console.error("CRITICAL: Failed to read default settings after attempting to ensure row id=1 exists in app_settings.");
+        return NextResponse.json(DEFAULT_DEV_SETTINGS); // Fallback to app defaults
       }
-      // If insertion failed or still no row, return defaults
-      return NextResponse.json(DEFAULT_DEV_SETTINGS);
     }
-    // Ensure both fields are present, even if one was null in DB (e.g. due to older schema)
-    const settingsFromDb = rows[0];
-    const completeSettings: AppSettings = {
-        expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
-        depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
-    };
-    return NextResponse.json(completeSettings);
   } catch (error) {
-    console.error('Failed to fetch app settings from Postgres:', error);
-    // Return defaults on error to allow app to function
-    return NextResponse.json(DEFAULT_DEV_SETTINGS, { status: 500 });
+    console.error('Failed to fetch/ensure app settings from Postgres:', error);
+    return NextResponse.json({ error: 'Failed to fetch or initialize app settings', details: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
@@ -93,17 +101,20 @@ export async function PUT(request: Request) {
   } catch (e) {
     return NextResponse.json({ error: 'Invalid JSON payload for PUT settings' }, { status: 400 });
   }
+  
   const { expiryWarningDays, depletionWarningDays } = payload;
 
   if (!process.env.POSTGRES_URL) {
     console.warn("POSTGRES_URL is not set. Running in DB-less local development mode for PUT /api/settings. Simulating update.");
-    if (expiryWarningDays !== undefined) DEFAULT_DEV_SETTINGS.expiryWarningDays = expiryWarningDays;
-    if (depletionWarningDays !== undefined) DEFAULT_DEV_SETTINGS.depletionWarningDays = depletionWarningDays;
-    return NextResponse.json(DEFAULT_DEV_SETTINGS);
+    const newDevSettings = { ...DEFAULT_DEV_SETTINGS };
+    if (expiryWarningDays !== undefined) newDevSettings.expiryWarningDays = expiryWarningDays;
+    if (depletionWarningDays !== undefined) newDevSettings.depletionWarningDays = depletionWarningDays;
+    // In DB-less mode, we can't really persist, so this just reflects back.
+    // The actual DEFAULT_DEV_SETTINGS object in memory is not mutated by this path.
+    return NextResponse.json(newDevSettings);
   }
 
   try {
-    // Validate that both required fields are present and are numbers
     if (expiryWarningDays === undefined || typeof expiryWarningDays !== 'number' || expiryWarningDays < 0) {
       return NextResponse.json({ error: '有效的临近过期预警天数 (非负数) 为必填项。' }, { status: 400 });
     }
@@ -124,8 +135,6 @@ export async function PUT(request: Request) {
     if (result.rows.length > 0) {
         return NextResponse.json(result.rows[0]);
     }
-    // This case should ideally not be reached if ON CONFLICT DO UPDATE RETURNING works as expected.
-    // If it does, it means the insert/update failed silently or didn't return rows.
     return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
 
   } catch (error) {

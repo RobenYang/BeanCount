@@ -8,7 +8,7 @@ import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
 import { Button } from "../ui/button";
-import { Archive, Package, AlertTriangle, Hourglass } from "lucide-react"; // Added Hourglass
+import { Archive, Package, AlertTriangle, Hourglass } from "lucide-react";
 import { useState } from "react";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { useInventory } from "@/contexts/InventoryContext";
@@ -34,6 +34,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
 
   const isDepletingSoon = analysisData?.daysToDepletion !== undefined &&
                           analysisData.daysToDepletion !== Infinity &&
+                          analysisData.daysToDepletion >= 0 && // Ensure it's not already depleted beyond calculation
                           analysisData.daysToDepletion <= appSettings.depletionWarningDays;
 
   const isNearingExpiry = product.category === 'INGREDIENT' &&
@@ -41,7 +42,6 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                                             differenceInDays(parseISO(b.expiryDate), new Date()) >= 0 &&
                                             differenceInDays(parseISO(b.expiryDate), new Date()) <= appSettings.expiryWarningDays);
 
-  const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
   const imageSrc = product.imageUrl || placeholderImage;
 
@@ -122,15 +122,15 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <p>消耗分析数据不可用。</p>
           )}
         </CardContent>
-        <CardFooter className="pt-2 space-x-2">
+        <CardFooter className="pt-2 space-x-2 flex-wrap">
           {isDepletingSoon && (
-            <Badge variant="destructive" className="items-center">
+            <Badge variant="destructive" className="items-center mb-1">
               <Hourglass className="mr-1 h-3 w-3" /> 即将耗尽 (≤{appSettings.depletionWarningDays}天)
             </Badge>
           )}
-          {isNearingExpiry && !isDepletingSoon && ( // Show only if not already depleting soon to avoid badge clutter
-            <Badge variant="outline" className="border-orange-500 text-orange-600 items-center">
-              <AlertTriangle className="mr-1 h-3 w-3" /> 临近过期
+          {isNearingExpiry && ( 
+            <Badge variant="outline" className="border-orange-500 text-orange-600 items-center mb-1">
+              <AlertTriangle className="mr-1 h-3 w-3" /> 临近过期 (≤{appSettings.expiryWarningDays}天)
             </Badge>
           )}
         </CardFooter>
