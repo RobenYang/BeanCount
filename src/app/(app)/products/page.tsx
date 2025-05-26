@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils"; // Added missing import
 
 function formatProductCategory(category: ProductCategory): string {
   switch (category) {
@@ -56,13 +57,12 @@ const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
   { id: 'category', label: '类别', defaultVisible: true, sortable: false, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
   { id: 'unit', label: '单位', defaultVisible: true, sortable: false, getValue: (p) => p.unit, isNumeric: false, isDate: false },
   { id: 'shelfLifeDays', label: '保质期', defaultVisible: true, sortable: false, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
-  // { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: true, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" }, // Removed
   { id: 'totalQuantity', label: '库存数量', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalQuantity, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalValue', label: '库存总价值', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalValue, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
 
-const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v3'; // Incremented version
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v3';
 
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
@@ -95,9 +95,9 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
               const daysToExpiry = differenceInDays(expiryDate, new Date());
               if (daysToExpiry < 0) {
                 expiryBadgeVariant = "destructive";
-                daysToExpiryText = `已过期 ${Math.abs(daysToExpiry)}天`;
+                daysToExpiryText = `已过期 ${Math.abs(daysToExpiry)} 天`;
               } else {
-                daysToExpiryText = `剩 ${daysToExpiry}天`;
+                daysToExpiryText = `剩 ${daysToExpiry} 天`;
                 if (daysToExpiry <= expiryWarningDays) expiryBadgeVariant = "outline";
               }
             }
@@ -283,7 +283,7 @@ export default function ProductsPage() {
         acc[col.id] = col.defaultVisible;
         return acc;
     }, {} as Record<ProductColumnKey, boolean>);
-    defaults['name'] = true;
+    defaults['name'] = true; // Ensure 'name' is always default visible
     return defaults;
   }, []);
 
@@ -296,20 +296,17 @@ export default function ProductsPage() {
     if (storedVisibleColumns) {
       try {
         const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
-        const validatedColumns = { ...initialVisibleColumns };
+        // Create a validated set of columns ensuring all known columns are present and 'name' is true
+        const validatedColumns = { ...initialVisibleColumns }; // Start with defaults (which includes name: true)
         for (const colDef of ALL_PRODUCT_COLUMNS) {
-            if (colDef.id === 'name') {
-                validatedColumns[colDef.id] = true;
-            } else if (parsedColumns.hasOwnProperty(colDef.id)) {
+            if (parsedColumns.hasOwnProperty(colDef.id) && colDef.id !== 'name') { // Don't let stored value override name if it was false
                 validatedColumns[colDef.id] = parsedColumns[colDef.id];
             }
         }
         setVisibleColumns(validatedColumns);
       } catch (e) {
         console.error("Failed to parse visible columns from localStorage", e);
-        const defaultColsWithFixedName = { ...initialVisibleColumns };
-        defaultColsWithFixedName['name'] = true;
-        setVisibleColumns(defaultColsWithFixedName);
+        setVisibleColumns(initialVisibleColumns); // Fallback to defaults
       }
     } else {
         setVisibleColumns(initialVisibleColumns);
@@ -328,10 +325,10 @@ export default function ProductsPage() {
       if (prevSortConfig.key === columnKey) {
         if (prevSortConfig.direction === 'descending') {
           return { key: columnKey, direction: 'ascending' };
-        } else {
-          return { key: null, direction: 'descending' };
+        } else { // Was ascending, now clear sort
+          return { key: null, direction: 'descending' }; // Default direction if key is re-selected
         }
-      } else {
+      } else { // New column to sort by
         return { key: columnKey, direction: 'descending' };
       }
     });
@@ -339,7 +336,7 @@ export default function ProductsPage() {
 
   const filteredAndSortedProducts = useMemo(() => {
     if (!hasMounted || isLoadingProducts) return [];
-    let tempProducts = [...products]; // Work with a copy
+    let tempProducts = [...products];
 
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
@@ -355,7 +352,8 @@ export default function ProductsPage() {
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
       if (columnDefinition && columnDefinition.sortable) {
-        tempProducts.sort((a, b) => { // Sort the copied array
+        // Important: Sort a copy of the array
+        tempProducts = [...tempProducts].sort((a, b) => {
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
 
@@ -418,7 +416,7 @@ export default function ProductsPage() {
     return activeTab === 'active' ? '添加一些产品开始吧！' : '您归档的产品将显示在此处。';
   };
 
-  const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id] || col.id === 'name'); // Ensure 'name' is always considered for display logic
+  const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id] || col.id === 'name');
 
   const handleExportToCSV = useCallback(() => {
     const activeProductsWithDetails = products
@@ -432,7 +430,7 @@ export default function ProductsPage() {
 
     const csvRows: string[][] = [];
     const headers = [
-      "产品ID", "产品名称", "类别", "单位", "保质期(天)", /* "预警阈值", Removed */ "创建日期", "是否已归档",
+      "产品ID", "产品名称", "类别", "单位", "保质期(天)", "创建日期", "是否已归档",
       "产品总库存", "产品总价值(¥)",
       "批次ID", "批次生产日期", "批次过期日期", "批次初始数量", "批次当前数量", "批次单位成本(¥)"
     ];
@@ -453,7 +451,6 @@ export default function ProductsPage() {
         formatCategoryForCSV(product.category),
         product.unit,
         product.category === 'INGREDIENT' && product.shelfLifeDays ? String(product.shelfLifeDays) : "",
-        // String(product.lowStockThreshold), // Removed
         formatDateForCSV(product.createdAt),
         product.isArchived ? "是" : "否",
         String(details.totalQuantity),
@@ -793,3 +790,6 @@ export default function ProductsPage() {
     </div>
   );
 }
+
+
+    
