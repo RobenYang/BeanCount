@@ -8,9 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
-    PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings,
-    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown,
-    Download, FileText, AlertTriangle
+    PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight,
+    Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, ArrowUp, ArrowDown,
+    Download, FileText
 } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays } from "date-fns";
@@ -51,19 +51,17 @@ const productCategoryOptions: { value: ProductCategory | 'ALL'; label: string }[
     { value: "NON_INGREDIENT", label: formatProductCategory("NON_INGREDIENT") },
 ];
 
-// Removed lowStockThreshold column definition
 const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
   { id: 'name', label: '名称', defaultVisible: true, sortable: false, getValue: (p) => p.name, isNumeric: false, isDate: false, headerClassName: "min-w-[200px]" },
   { id: 'category', label: '类别', defaultVisible: true, sortable: false, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
   { id: 'unit', label: '单位', defaultVisible: true, sortable: false, getValue: (p) => p.unit, isNumeric: false, isDate: false },
   { id: 'shelfLifeDays', label: '保质期', defaultVisible: false, sortable: false, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
-  // { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: false, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center"}, // Removed
   { id: 'totalQuantity', label: '库存数量', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalQuantity, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalValue', label: '库存总价值', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalValue, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
 
-const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v4'; // Incremented version
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v4';
 
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
@@ -177,7 +175,7 @@ function ProductRow({
   const { totalQuantity, totalValue, batches } = productDetails;
 
   const mainRowCells = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]).map(colDef => {
-    let cellContent;
+    let cellContent: React.ReactNode;
     if (colDef.id === 'name') {
       cellContent = (
         <div className="flex items-center gap-3">
@@ -205,8 +203,6 @@ function ProductRow({
       );
     } else if (colDef.id === 'shelfLifeDays') {
         cellContent = product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A';
-    // } else if (colDef.id === 'lowStockThreshold') { // Removed
-    //     cellContent = `${product.lowStockThreshold} ${product.unit}`;
     } else if (colDef.id === 'totalValue') {
         cellContent = `¥${totalValue.toFixed(2)}`;
     } else if (colDef.id === 'createdAt') {
@@ -218,7 +214,7 @@ function ProductRow({
   });
 
   const numberOfVisibleDataColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]).length;
-  const numberOfTotalColumns = 1 + numberOfVisibleDataColumns + 1; // expand icon, data columns, actions
+  const numberOfTotalColumns = 1 + numberOfVisibleDataColumns + 1;
 
   return (
     <>
@@ -267,7 +263,7 @@ function ProductRow({
 
 type SortConfig = {
   key: ProductColumnKey | null;
-  direction: 'ascending' | 'descending';
+  direction: 'ascending' | 'descending' | null;
 };
 
 
@@ -282,11 +278,11 @@ export default function ProductsPage() {
   const [isDailyReportModalOpen, setIsDailyReportModalOpen] = useState(false);
 
   const initialVisibleColumns = useMemo(() => {
-    const defaults = ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
-        acc[col.id] = col.defaultVisible;
-        return acc;
-    }, {} as Record<ProductColumnKey, boolean>);
-    defaults['name'] = true; // Ensure 'name' is always default visible
+    const defaults = {} as Record<ProductColumnKey, boolean>;
+    ALL_PRODUCT_COLUMNS.forEach(col => {
+        defaults[col.id] = col.defaultVisible;
+    });
+    defaults['name'] = true;
     return defaults;
   }, []);
 
@@ -299,16 +295,16 @@ export default function ProductsPage() {
     if (storedVisibleColumns) {
       try {
         const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
-        const validatedColumns = { ...initialVisibleColumns }; 
+        const validatedColumns = { ...initialVisibleColumns };
         for (const colDef of ALL_PRODUCT_COLUMNS) {
-            if (parsedColumns.hasOwnProperty(colDef.id) && colDef.id !== 'name') { 
+            if (parsedColumns.hasOwnProperty(colDef.id) && colDef.id !== 'name') {
                 validatedColumns[colDef.id] = parsedColumns[colDef.id];
             }
         }
         setVisibleColumns(validatedColumns);
       } catch (e) {
         console.error("Failed to parse visible columns from localStorage", e);
-        setVisibleColumns(initialVisibleColumns); 
+        setVisibleColumns(initialVisibleColumns);
       }
     } else {
         setVisibleColumns(initialVisibleColumns);
@@ -321,16 +317,24 @@ export default function ProductsPage() {
     }
   }, [visibleColumns, hasMounted]);
 
+  useEffect(() => {
+    if (!productToEdit) {
+      setIsEditModalOpen(false);
+    }
+  }, [productToEdit]);
+
 
   const handleSort = (columnKey: ProductColumnKey) => {
     setSortConfig(prevSortConfig => {
       if (prevSortConfig.key === columnKey) {
         if (prevSortConfig.direction === 'descending') {
           return { key: columnKey, direction: 'ascending' };
-        } else { 
-          return { key: null, direction: 'descending' }; 
+        } else if (prevSortConfig.direction === 'ascending') {
+          return { key: null, direction: null };
+        } else {
+          return { key: columnKey, direction: 'descending' };
         }
-      } else { 
+      } else {
         return { key: columnKey, direction: 'descending' };
       }
     });
@@ -351,10 +355,10 @@ export default function ProductsPage() {
       tempProducts = tempProducts.filter(product => product.category === categoryFilter);
     }
 
-    if (sortConfig.key) {
+    if (sortConfig.key && sortConfig.direction) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
       if (columnDefinition && columnDefinition.sortable) {
-        tempProducts = [...tempProducts].sort((a, b) => { 
+        tempProducts = [...tempProducts].sort((a, b) => {
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
 
@@ -430,7 +434,6 @@ export default function ProductsPage() {
     }
 
     const csvRows: string[][] = [];
-    // Removed lowStockThreshold from CSV export headers
     const headers = [
       "产品ID", "产品名称", "类别", "单位", "保质期(天)", "创建日期", "是否已归档",
       "产品总库存", "产品总价值(¥)",
@@ -453,7 +456,6 @@ export default function ProductsPage() {
         formatCategoryForCSV(product.category),
         product.unit,
         product.category === 'INGREDIENT' && product.shelfLifeDays ? String(product.shelfLifeDays) : "",
-        // String(product.lowStockThreshold), // Removed lowStockThreshold from CSV data
         formatDateForCSV(product.createdAt),
         product.isArchived ? "是" : "否",
         String(details.totalQuantity),
@@ -534,7 +536,7 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead>
                     {Array.from({ length: skeletonColumnCount }).map((_, idx) => (
-                        <TableHead key={`skel-head-col-${idx}`} >
+                        <TableHead key={`skel-head-col-${idx}-mainSkel`} >
                             <Skeleton className="h-5 w-20"/>
                         </TableHead>
                     ))}
@@ -543,12 +545,12 @@ export default function ProductsPage() {
                 </TableHeader>
                 <TableBody>
                   {[...Array(3)].map((_, i) => (
-                    <TableRow key={`skeleton-row-${i}`}>
+                    <TableRow key={`skeleton-row-${i}-mainSkel`}>
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
                       {Array.from({ length: skeletonColumnCount }).map((_, colIdx) => (
-                        <TableCell key={`skel-cell-${i}-${colIdx}`} >
+                        <TableCell key={`skel-cell-${i}-${colIdx}-mainSkel`} >
                             {colIdx === 0 ?
-                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div>) :
+                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) :
                                 (<Skeleton className="h-5 w-16" />)
                             }
                         </TableCell>
@@ -668,7 +670,7 @@ export default function ProductsPage() {
                         >
                             {colDef.label}
                             {colDef.sortable && (
-                                sortConfig.key === colDef.id ? (
+                                sortConfig.key === colDef.id && sortConfig.direction ? (
                                     sortConfig.direction === 'ascending' ?
                                     <ArrowUp className="ml-2 h-3 w-3 inline-block" /> :
                                     <ArrowDown className="ml-2 h-3 w-3 inline-block" />
@@ -730,7 +732,7 @@ export default function ProductsPage() {
                         >
                             {colDef.label}
                             {colDef.sortable && (
-                                sortConfig.key === colDef.id ? (
+                                sortConfig.key === colDef.id && sortConfig.direction ? (
                                     sortConfig.direction === 'ascending' ?
                                     <ArrowUp className="ml-2 h-3 w-3 inline-block" /> :
                                     <ArrowDown className="ml-2 h-3 w-3 inline-block" />
