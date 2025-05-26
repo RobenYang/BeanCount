@@ -10,10 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import {
     PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings,
     Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown,
-    Download, FileText, AlertTriangle // Added AlertTriangle for consistency
+    Download, FileText, AlertTriangle
 } from "lucide-react";
 import Link from "next/link";
-import { format, parseISO, differenceInDays, isSameDay, startOfDay } from "date-fns";
+import { format, parseISO, differenceInDays } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
@@ -51,19 +51,19 @@ const productCategoryOptions: { value: ProductCategory | 'ALL'; label: string }[
     { value: "NON_INGREDIENT", label: formatProductCategory("NON_INGREDIENT") },
 ];
 
-// Re-added lowStockThreshold column definition
+// Removed lowStockThreshold column definition
 const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
   { id: 'name', label: '名称', defaultVisible: true, sortable: false, getValue: (p) => p.name, isNumeric: false, isDate: false, headerClassName: "min-w-[200px]" },
   { id: 'category', label: '类别', defaultVisible: true, sortable: false, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
   { id: 'unit', label: '单位', defaultVisible: true, sortable: false, getValue: (p) => p.unit, isNumeric: false, isDate: false },
   { id: 'shelfLifeDays', label: '保质期', defaultVisible: false, sortable: false, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
-  { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: false, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center"},
+  // { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: false, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center"}, // Removed
   { id: 'totalQuantity', label: '库存数量', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalQuantity, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalValue', label: '库存总价值', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalValue, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
 
-const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v3';
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v4'; // Incremented version
 
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
@@ -205,8 +205,8 @@ function ProductRow({
       );
     } else if (colDef.id === 'shelfLifeDays') {
         cellContent = product.category === 'INGREDIENT' && product.shelfLifeDays ? `${product.shelfLifeDays} 天` : 'N/A';
-    } else if (colDef.id === 'lowStockThreshold') {
-        cellContent = `${product.lowStockThreshold} ${product.unit}`;
+    // } else if (colDef.id === 'lowStockThreshold') { // Removed
+    //     cellContent = `${product.lowStockThreshold} ${product.unit}`;
     } else if (colDef.id === 'totalValue') {
         cellContent = `¥${totalValue.toFixed(2)}`;
     } else if (colDef.id === 'createdAt') {
@@ -354,7 +354,7 @@ export default function ProductsPage() {
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
       if (columnDefinition && columnDefinition.sortable) {
-        tempProducts = [...tempProducts].sort((a, b) => { // Sort a copy
+        tempProducts = [...tempProducts].sort((a, b) => { 
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
 
@@ -430,9 +430,9 @@ export default function ProductsPage() {
     }
 
     const csvRows: string[][] = [];
-    // Add lowStockThreshold to CSV export headers
+    // Removed lowStockThreshold from CSV export headers
     const headers = [
-      "产品ID", "产品名称", "类别", "单位", "保质期(天)", "预警阈值", "创建日期", "是否已归档",
+      "产品ID", "产品名称", "类别", "单位", "保质期(天)", "创建日期", "是否已归档",
       "产品总库存", "产品总价值(¥)",
       "批次ID", "批次生产日期", "批次过期日期", "批次初始数量", "批次当前数量", "批次单位成本(¥)"
     ];
@@ -453,7 +453,7 @@ export default function ProductsPage() {
         formatCategoryForCSV(product.category),
         product.unit,
         product.category === 'INGREDIENT' && product.shelfLifeDays ? String(product.shelfLifeDays) : "",
-        String(product.lowStockThreshold), // Add lowStockThreshold to CSV data
+        // String(product.lowStockThreshold), // Removed lowStockThreshold from CSV data
         formatDateForCSV(product.createdAt),
         product.isArchived ? "是" : "否",
         String(details.totalQuantity),
@@ -548,7 +548,7 @@ export default function ProductsPage() {
                       {Array.from({ length: skeletonColumnCount }).map((_, colIdx) => (
                         <TableCell key={`skel-cell-${i}-${colIdx}`} >
                             {colIdx === 0 ?
-                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) :
+                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div>) :
                                 (<Skeleton className="h-5 w-16" />)
                             }
                         </TableCell>
@@ -631,7 +631,7 @@ export default function ProductsPage() {
                 <DropdownMenuContent align="end">
                     <DropdownMenuLabel>切换列显示</DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {ALL_PRODUCT_COLUMNS.filter(col => col.id !== 'name').map((column) => ( // Ensure 'name' is not in toggle list
+                    {ALL_PRODUCT_COLUMNS.filter(col => col.id !== 'name').map((column) => (
                         <DropdownMenuCheckboxItem
                         key={column.id}
                         className="capitalize"

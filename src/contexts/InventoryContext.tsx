@@ -2,22 +2,20 @@
 "use client";
 
 import type { Product, Batch, Transaction, OutflowReasonValue, AppSettings, ProductStockAnalysis } from '@/lib/types';
-// import { nanoid } from 'nanoid'; // No longer used directly in context for IDs
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { toast } from "@/hooks/use-toast";
-import { formatISO, parseISO, differenceInDays, startOfWeek, endOfWeek, subWeeks, isWithinInterval, addDays, endOfDay, subDays, eachDayOfInterval } from 'date-fns';
+import { formatISO, parseISO, isWithinInterval, addDays, endOfDay, subDays, startOfWeek, endOfWeek, subWeeks } from 'date-fns';
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   expiryWarningDays: 7,
   depletionWarningDays: 5, 
 };
 
-// Helper to get the date range for 'LAST_FULL_WEEK'
 function getLastFullWeekDateRange(): { start: Date; end: Date; days: number } {
   const today = new Date();
-  const todayStart = startOfWeek(today, { weekStartsOn: 1 }); // start of THIS week (Monday)
-  const startOfLastFullWeek = subWeeks(todayStart, 1);       // Monday of LAST week
-  const endOfLastFullWeek = endOfDay(endOfWeek(startOfLastFullWeek, { weekStartsOn: 1 })); // Sunday of LAST week, end of day
+  const todayStart = startOfWeek(today, { weekStartsOn: 1 }); 
+  const startOfLastFullWeek = subWeeks(todayStart, 1);       
+  const endOfLastFullWeek = endOfDay(endOfWeek(startOfLastFullWeek, { weekStartsOn: 1 })); 
   return { start: startOfLastFullWeek, end: endOfLastFullWeek, days: 7 };
 }
 
@@ -31,8 +29,8 @@ interface InventoryContextType {
   isLoadingBatches: boolean;
   isLoadingTransactions: boolean;
   isLoadingSettings: boolean;
-  addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>) => Promise<Product | undefined>;
-  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => Promise<void>;
+  addProduct: (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'lowStockThreshold'>) => Promise<Product | undefined>;
+  editProduct: (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category' | 'lowStockThreshold'>>) => Promise<void>;
   archiveProduct: (productId: string) => Promise<void>;
   unarchiveProduct: (productId: string) => Promise<void>;
   getProductById: (id: string) => Product | undefined;
@@ -172,56 +170,31 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       const response = await fetch('/api/settings', { headers: getApiAuthHeaders() });
       if (!response.ok) {
         const errorBody = await response.text(); 
-        let errorMessage = `Failed to fetch app settings from API (status: ${response.status})`;
+        let errorData = { error: `加载应用设置失败: Failed to fetch app settings from API (status: ${response.status})`, details: errorBody };
         try {
-            const errorData = JSON.parse(errorBody);
-            errorMessage = errorData.error || errorData.details || errorMessage;
-        } catch (e) {
-            // If parsing fails, use the raw text or a generic message
-            errorMessage = errorBody || errorMessage;
-        }
-        throw new Error(errorMessage);
+            const parsedError = JSON.parse(errorBody);
+            errorData = { error: parsedError.error || errorData.error, details: parsedError.details || errorData.details };
+        } catch (e) { /* Ignore parsing error, use raw body */ }
+        throw new Error(errorData.error + (errorData.details ? `: ${errorData.details}` : ''));
       }
       const data: Partial<AppSettings> = await response.json(); 
       
-      const fetchedExpiryWarningDays = data.expiryWarningDays;
-      const fetchedDepletionWarningDays = data.depletionWarningDays;
-
-      let settingsWereIncompleteOrInvalid = false;
-      const completeSettings: AppSettings = { ...DEFAULT_APP_SETTINGS };
-
-      if (typeof fetchedExpiryWarningDays === 'number' && fetchedExpiryWarningDays >= 0) {
-        completeSettings.expiryWarningDays = fetchedExpiryWarningDays;
-      } else {
-        settingsWereIncompleteOrInvalid = true;
-        console.warn("Fetched expiryWarningDays was invalid or missing from API, using default:", DEFAULT_APP_SETTINGS.expiryWarningDays);
-      }
-
-      if (typeof fetchedDepletionWarningDays === 'number' && fetchedDepletionWarningDays >= 0) {
-        completeSettings.depletionWarningDays = fetchedDepletionWarningDays;
-      } else {
-        settingsWereIncompleteOrInvalid = true;
-        console.warn("Fetched depletionWarningDays was invalid or missing from API, using default:", DEFAULT_APP_SETTINGS.depletionWarningDays);
-      }
-      
+      const completeSettings: AppSettings = { 
+        expiryWarningDays: data.expiryWarningDays ?? DEFAULT_APP_SETTINGS.expiryWarningDays,
+        depletionWarningDays: data.depletionWarningDays ?? DEFAULT_APP_SETTINGS.depletionWarningDays,
+      };
       setAppSettings(completeSettings);
-
-      if (settingsWereIncompleteOrInvalid && process.env.POSTGRES_URL) { 
-        console.log("Attempting to save complete default settings back to DB due to incomplete/invalid fetch from API.");
-        // Update using the completed settings that include defaults for missing fields
-        await updateAppSettings(completeSettings, false); 
-      }
 
     } catch (error) {
       console.error("Error fetching app settings:", error);
-      toast({ title: "错误", description: `加载应用设置失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
-      setAppSettings(DEFAULT_APP_SETTINGS); // Fallback to application defaults on error
+      toast({ title: "错误", description: `${error instanceof Error ? error.message : '加载应用设置时发生未知错误'}`, variant: "destructive" });
+      setAppSettings(DEFAULT_APP_SETTINGS); 
     } finally {
       setIsLoadingSettings(false);
     }
-  }, [updateAppSettings]); 
+  }, []); 
   
-  const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>): Promise<Product | undefined> => {
+  const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'lowStockThreshold'>): Promise<Product | undefined> => {
     try {
       const response = await fetch('/api/products', {
         method: 'POST',
@@ -233,7 +206,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || 'Failed to add product via API');
       }
       const newProductFromServer: Product = await response.json();
-      await fetchProducts(); // Refetch to update list
+      await fetchProducts(); 
       toast({ title: "成功", description: `产品 "${newProductFromServer.name}" 已添加。` });
       return newProductFromServer;
     } catch (error) {
@@ -246,16 +219,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   const editProduct = useCallback(async (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category' | 'lowStockThreshold'>>) => {
     try {
       const productToSubmit = { ...updatedProductData };
-      // Ensure lowStockThreshold is part of the payload if it was part of the Product type for editing
-      // Since it's now on AppSettings for depletion, product-specific lowStockThreshold might not be sent
-      // The API /api/products/[productId] might need adjustment if it expects lowStockThreshold
-      const productFromState = products.find(p => p.id === productId);
-      if (productFromState && productFromState.lowStockThreshold !== undefined && updatedProductData.lowStockThreshold === undefined) {
-        // If backend expects it and form doesn't provide it, send original
-        // (productFromState as any).lowStockThreshold = productFromState.lowStockThreshold; // This line is tricky, depends on API
-      }
-
-
       const response = await fetch(`/api/products/${productId}`, {
         method: 'PUT',
         headers: getApiAuthHeaders(),
@@ -266,9 +229,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || `Failed to update product ${productId} via API`);
       }
       await fetchProducts(); 
-      
-      // If product name changed, batches and transactions with this product name might need to be updated
-      // if they store product_name and are not fetched by joining. Our API for batches/transactions handles this.
       await fetchBatches();
       await fetchTransactions();
 
@@ -373,15 +333,14 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || 'Failed to add batch via API');
       }
       const newBatchFromServer: Batch = await batchResponse.json();
-      // await fetchBatches(); // API now returns the created batch, add it locally or refetch
 
       const transactionForNewBatch: Omit<Transaction, 'id'> = {
         productId: newBatchFromServer.productId,
-        productName: newBatchFromServer.productName || product.name, // Use name from batch if API returns it
+        productName: newBatchFromServer.productName || product.name, 
         batchId: newBatchFromServer.id,
         type: 'IN',
         quantity: newBatchFromServer.initialQuantity,
-        timestamp: newBatchFromServer.createdAt, // Use createdAt from the new batch
+        timestamp: newBatchFromServer.createdAt, 
         unitCostAtTransaction: newBatchFromServer.unitCost,
         notes: `批次 ${newBatchFromServer.id} 的初始入库`,
         isCorrectionIncrease: false,
@@ -389,7 +348,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
       await addTransactionAPI(transactionForNewBatch);
       
-      // After both batch and transaction are successfully added to DB, refetch all to ensure UI consistency
       await Promise.all([fetchBatches(), fetchTransactions()]);
 
 
@@ -455,7 +413,6 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
       if (!batchUpdateResponse.ok) {
           const errorData = await batchUpdateResponse.json().catch(() => ({ error: 'Failed to parse error from batch update API' }));
-          // Even if DB update fails for batch, transaction was recorded. Refetch for UI consistency.
           await Promise.all([fetchBatches(), fetchTransactions()]);
           toast({ title: "警告: 数据同步可能不一致", description: `交易已记录，但批次 ${batchId} 库存数据库更新失败: ${errorData.error || '未知错误'}。请手动核实。`, variant: "destructive", duration: 10000 });
           console.error("Transaction recorded, but batch update failed in DB:", errorData.error);
@@ -471,7 +428,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error("Error recording outflow or updating batch:", error);
-      await Promise.all([fetchBatches(), fetchTransactions()]); // Refetch in case of any error
+      await Promise.all([fetchBatches(), fetchTransactions()]); 
       toast({ title: "错误", description: `记录出库操作失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
   }, [getProductById, batches, addTransactionAPI, fetchBatches, fetchTransactions]);
@@ -527,22 +484,20 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       predictedDepletionDate,
       daysToDepletion: daysToDepletionNum,
     };
-  }, [products, transactions, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings, appSettings]); // Added appSettings to dependency array
-
-
-  const addSampleDataIfNeeded = useCallback(async () => {
-    // This function is intentionally left empty as per user request to not add default sample data.
-    // If sample data is needed for testing, this function can be re-implemented.
-  }, []);
+  }, [products, transactions, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings, appSettings]);
 
 
   useEffect(() => {
-    Promise.all([
-        fetchProducts(),
-        fetchBatches(),
-        fetchTransactions(),
-        fetchAppSettings()
-    ]);
+    const fetchData = async () => {
+      await fetchAppSettings(); // Fetch settings first
+      // Then fetch other data that might depend on settings or just general data
+      await Promise.all([
+          fetchProducts(),
+          fetchBatches(),
+          fetchTransactions()
+      ]);
+    };
+    fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
   

@@ -17,22 +17,21 @@ import {
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import type { Product } from "@/lib/types";
-import { Image as ImageIcon, Camera, XCircle, UploadCloud, Save, AlertTriangle } from "lucide-react"; // Added AlertTriangle
+import { Image as ImageIcon, Camera, XCircle, UploadCloud, Save } from "lucide-react";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import NextImage from "next/image";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertTitle, AlertDescription as AlertDesc } from "@/components/ui/alert";
 import { useInventory } from "@/contexts/InventoryContext";
 
-// Re-added lowStockThreshold to schema
 const editProductFormSchema = z.object({
   name: z.string().min(2, "产品名称至少需要2个字符。"),
   unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
   shelfLifeDays: z.coerce.number().int().optional().nullable(),
-  lowStockThreshold: z.coerce // Re-added lowStockThreshold
-    .number({ invalid_type_error: "预警阈值必须是数字。" })
-    .int("预警阈值必须是整数。")
-    .min(0, "预警阈值不能为负数。"),
+  // lowStockThreshold: z.coerce // Removed
+  //   .number({ invalid_type_error: "预警阈值必须是数字。" })
+  //   .int("预警阈值必须是整数。")
+  //   .min(0, "预警阈值不能为负数。"),
   imageUrl: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
   // Refinement logic for shelfLifeDays handled based on actual product.category in onSubmit
@@ -67,7 +66,7 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
         name: product.name,
         unit: product.unit,
         shelfLifeDays: product.category === "INGREDIENT" ? product.shelfLifeDays : null,
-        lowStockThreshold: product.lowStockThreshold, // Set lowStockThreshold from product
+        // lowStockThreshold: product.lowStockThreshold, // Removed
         imageUrl: product.imageUrl || null,
       });
       setImageDataUri(product.imageUrl || null);
@@ -140,7 +139,7 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
       name: data.name,
       unit: data.unit,
       shelfLifeDays: product.category === "INGREDIENT" ? (data.shelfLifeDays || 0) : null,
-      lowStockThreshold: data.lowStockThreshold, // Include lowStockThreshold
+      // lowStockThreshold: data.lowStockThreshold, // Removed
       imageUrl: imageDataUri,
     };
 
@@ -214,30 +213,7 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
               />
             )}
 
-            <FormField
-              control={form.control}
-              name="lowStockThreshold"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>库存预警阈值 ({product.unit || '单位'})</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      {...field} 
-                      value={field.value === undefined ? '' : String(field.value)}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        field.onChange(val === '' ? undefined : parseInt(val, 10));
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    当此产品的库存数量低于或等于此值时，将触发低库存预警。
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* Removed lowStockThreshold FormField */}
 
             <FormField
               control={form.control}

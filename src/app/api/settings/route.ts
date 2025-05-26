@@ -34,6 +34,17 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Ensure the settings row exists with all necessary columns and default values
+    // ON CONFLICT DO UPDATE is crucial here if the row exists but might be missing a new column's value
+    await sql`
+      INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) 
+      VALUES (1, ${DEFAULT_DEV_SETTINGS.expiryWarningDays}, ${DEFAULT_DEV_SETTINGS.depletionWarningDays}) 
+      ON CONFLICT (id) DO UPDATE SET
+        expiry_warning_days = EXCLUDED.expiry_warning_days,
+        depletion_warning_days = EXCLUDED.depletion_warning_days;
+    `;
+    
+    // Fetch the (potentially just created or updated) settings
     const { rows } = await sql`
       SELECT 
         expiry_warning_days AS "expiryWarningDays",
@@ -44,42 +55,19 @@ export async function GET(request: Request) {
 
     if (rows.length > 0) {
       const settingsFromDb = rows[0];
+      // Ensure both fields are present, falling back to defaults if somehow still null after the INSERT/UPDATE
       const completeSettings: AppSettings = {
           expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
           depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
       };
       return NextResponse.json(completeSettings);
     } else {
-      console.log("No settings found in DB (id=1) for app_settings, attempting to insert/update default values.");
-      await sql`
-        INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days) 
-        VALUES (1, ${DEFAULT_DEV_SETTINGS.expiryWarningDays}, ${DEFAULT_DEV_SETTINGS.depletionWarningDays}) 
-        ON CONFLICT (id) DO UPDATE SET
-          expiry_warning_days = EXCLUDED.expiry_warning_days,
-          depletion_warning_days = EXCLUDED.depletion_warning_days;
-      `;
-      
-      const freshFetch = await sql`
-        SELECT 
-            expiry_warning_days AS "expiryWarningDays",
-            depletion_warning_days AS "depletionWarningDays"
-        FROM app_settings WHERE id = 1;`;
-      
-      if (freshFetch.rows.length > 0) {
-        const settingsFromDb = freshFetch.rows[0];
-        const completeSettings: AppSettings = {
-            expiryWarningDays: settingsFromDb.expiryWarningDays ?? DEFAULT_DEV_SETTINGS.expiryWarningDays,
-            depletionWarningDays: settingsFromDb.depletionWarningDays ?? DEFAULT_DEV_SETTINGS.depletionWarningDays,
-        };
-        return NextResponse.json(completeSettings);
-      } else {
-        console.error("CRITICAL: Failed to read default settings after attempting to ensure row id=1 exists in app_settings. Returning app defaults.");
-        return NextResponse.json(DEFAULT_DEV_SETTINGS);
-      }
+      // This case should be extremely rare given the INSERT...ON CONFLICT logic above
+      console.error("CRITICAL: Failed to read default settings after attempting to ensure row id=1 exists in app_settings. Returning app defaults.");
+      return NextResponse.json(DEFAULT_DEV_SETTINGS);
     }
   } catch (error) {
     console.error('Failed to fetch/ensure app settings from Postgres:', error);
-    // Ensure a JSON response even on unhandled errors to prevent client parse issues
     const errorMessage = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: 'Failed to fetch or initialize app settings from database.', details: errorMessage }, { status: 500 });
   }
@@ -116,20 +104,33 @@ export async function PUT(request: Request) {
     }
 
     const result = await sql`
-      INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days)
-      VALUES (1, ${expiryWarningDays}, ${depletionWarningDays})
-      ON CONFLICT (id) DO UPDATE 
+      UPDATE app_settings 
       SET 
-        expiry_warning_days = EXCLUDED.expiry_warning_days,
-        depletion_warning_days = EXCLUDED.depletion_warning_days
+        expiry_warning_days = ${expiryWarningDays},
+        depletion_warning_days = ${depletionWarningDays}
+      WHERE id = 1
       RETURNING expiry_warning_days AS "expiryWarningDays", depletion_warning_days AS "depletionWarningDays";
     `;
     
     if (result.rows.length > 0) {
         return NextResponse.json(result.rows[0]);
+    } else {
+        // This would happen if the row id=1 didn't exist, which the GET request tries to prevent.
+        // But as a fallback for PUT, we could try to insert if update affected 0 rows.
+        const insertResult = await sql`
+            INSERT INTO app_settings (id, expiry_warning_days, depletion_warning_days)
+            VALUES (1, ${expiryWarningDays}, ${depletionWarningDays})
+            ON CONFLICT (id) DO UPDATE 
+            SET 
+                expiry_warning_days = EXCLUDED.expiry_warning_days,
+                depletion_warning_days = EXCLUDED.depletion_warning_days
+            RETURNING expiry_warning_days AS "expiryWarningDays", depletion_warning_days AS "depletionWarningDays";
+        `;
+        if (insertResult.rows.length > 0) {
+            return NextResponse.json(insertResult.rows[0]);
+        }
+        return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
     }
-    // This case should ideally not be reached if ON CONFLICT DO UPDATE is used correctly with id=1
-    return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
 
   } catch (error) {
     console.error('Failed to update app settings in Postgres:', error);

@@ -7,7 +7,7 @@ export interface Product {
   category: ProductCategory;
   unit: string;
   shelfLifeDays: number | null;
-  lowStockThreshold: number; // Re-added: Product-specific low stock threshold
+  // lowStockThreshold: number; // Removed
   imageUrl?: string;
   createdAt: string;
   isArchived?: boolean;
@@ -101,7 +101,7 @@ export type ProductColumnKey =
   | 'category'
   | 'unit'
   | 'shelfLifeDays'
-  | 'lowStockThreshold' // Re-added to be consistent with Product type
+  // | 'lowStockThreshold' // Removed
   | 'totalQuantity'
   | 'totalValue'
   | 'createdAt';

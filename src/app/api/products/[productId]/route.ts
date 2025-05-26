@@ -29,15 +29,27 @@ export async function GET(request: Request, { params }: { params: { productId: s
 
   if (!process.env.POSTGRES_URL) {
     console.warn(`POSTGRES_URL is not set. Running in DB-less local development mode for GET /api/products/${productId}. Returning not found.`);
-    return NextResponse.json({ error: 'Product not found in DB-less dev mode' }, { status: 404 });
+    // Simulate finding a product structure without lowStockThreshold
+    const mockProduct: Product = {
+        id: productId,
+        name: `Dev Product ${productId}`,
+        category: 'INGREDIENT',
+        unit: 'unit',
+        shelfLifeDays: 30,
+        imageUrl: null,
+        createdAt: new Date().toISOString(),
+        isArchived: false,
+    };
+    return NextResponse.json(mockProduct);
+    // return NextResponse.json({ error: 'Product not found in DB-less dev mode' }, { status: 404 });
   }
 
   try {
-    const { rows } = await sql<Product>`
+    const { rows } = await sql<Omit<Product, 'lowStockThreshold'>>`
       SELECT 
         id, name, category, unit, 
         shelf_life_days AS "shelfLifeDays", 
-        low_stock_threshold AS "lowStockThreshold", 
+        -- low_stock_threshold AS "lowStockThreshold", -- Removed
         image_url AS "imageUrl", 
         created_at AS "createdAt", 
         is_archived AS "isArchived"
@@ -59,8 +71,7 @@ export async function PUT(request: Request, { params }: { params: { productId: s
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { productId } = params;
-  // Expecting lowStockThreshold in the payload now
-  let productData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>> & { lowStockThreshold?: number };
+  let productData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category' | 'lowStockThreshold'>>;
   try {
     productData = await request.json();
   } catch (e) {
@@ -72,10 +83,10 @@ export async function PUT(request: Request, { params }: { params: { productId: s
     const mockUpdatedProduct: Product = {
         id: productId,
         name: productData.name || "Dev Product Name",
-        category: "INGREDIENT", 
+        category: "INGREDIENT", // Category cannot be changed in edit form
         unit: productData.unit || "unit",
         shelfLifeDays: productData.shelfLifeDays !== undefined ? productData.shelfLifeDays : 0,
-        lowStockThreshold: productData.lowStockThreshold !== undefined ? productData.lowStockThreshold : 0, // Include in mock
+        // lowStockThreshold removed
         imageUrl: productData.imageUrl || null,
         createdAt: new Date().toISOString(),
         isArchived: false, 
@@ -84,14 +95,10 @@ export async function PUT(request: Request, { params }: { params: { productId: s
   }
 
   try {
-    const { name, unit, shelfLifeDays, lowStockThreshold, imageUrl } = productData;
+    const { name, unit, shelfLifeDays, imageUrl } = productData;
 
-    // Ensure lowStockThreshold is validated if present, or handle if it's optional for update
-    if (!name || !unit || lowStockThreshold === undefined) {
-      return NextResponse.json({ error: 'Missing required fields for product update (name, unit, lowStockThreshold are required)' }, { status: 400 });
-    }
-    if (typeof lowStockThreshold !== 'number' || lowStockThreshold < 0) {
-        return NextResponse.json({ error: 'Invalid lowStockThreshold, must be a non-negative number.' }, { status: 400 });
+    if (!name || !unit ) { // Removed lowStockThreshold check
+      return NextResponse.json({ error: 'Missing required fields for product update (name, unit are required)' }, { status: 400 });
     }
     
     const currentProductResult = await sql`SELECT category FROM products WHERE id = ${productId}`;
@@ -109,16 +116,16 @@ export async function PUT(request: Request, { params }: { params: { productId: s
         name = ${name}, 
         unit = ${unit}, 
         shelf_life_days = ${shelfLifeDaysForDb}, 
-        low_stock_threshold = ${lowStockThreshold}, -- Update low_stock_threshold
+        -- low_stock_threshold column removed from DB
         image_url = ${imageUrl || null}
       WHERE id = ${productId}
       RETURNING 
         id, name, category, unit, 
         shelf_life_days AS "shelfLifeDays", 
-        low_stock_threshold AS "lowStockThreshold", 
         image_url AS "imageUrl", 
         created_at AS "createdAt", 
         is_archived AS "isArchived";
+        -- low_stock_threshold removed from RETURNING
     `;
 
     if (result.rowCount === 0) {
@@ -153,7 +160,7 @@ export async function PATCH(request: Request, { params }: { params: { productId:
         category: "INGREDIENT",
         unit: "unit",
         shelfLifeDays: 0,
-        lowStockThreshold: 0, // include in mock
+        // lowStockThreshold removed
         imageUrl: null,
         createdAt: new Date().toISOString(),
         isArchived: isArchived, 
@@ -173,10 +180,10 @@ export async function PATCH(request: Request, { params }: { params: { productId:
       RETURNING 
         id, name, category, unit, 
         shelf_life_days AS "shelfLifeDays", 
-        low_stock_threshold AS "lowStockThreshold", 
         image_url AS "imageUrl", 
         created_at AS "createdAt", 
         is_archived AS "isArchived";
+        -- low_stock_threshold removed from RETURNING
     `;
 
     if (result.rowCount === 0) {
@@ -189,7 +196,6 @@ export async function PATCH(request: Request, { params }: { params: { productId:
   }
 }
 
-// DELETE route remains unchanged as hard delete is not implemented
 export async function DELETE(request: Request, { params }: { params: { productId: string } }) {
   if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -18,8 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { ProductCategory } from "@/lib/types";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { PlusCircle, Image as ImageIcon, Camera, XCircle, UploadCloud, AlertTriangle } from "lucide-react"; // Added AlertTriangle
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PlusCircle, Image as ImageIcon, Camera, XCircle, UploadCloud, AlertTriangle } from "lucide-react";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import NextImage from "next/image";
 import { useToast } from "@/hooks/use-toast";
@@ -38,10 +38,10 @@ const productFormSchema = z.object({
   }),
   unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
   shelfLifeDays: z.coerce.number().int().optional(),
-  lowStockThreshold: z.coerce // Re-added lowStockThreshold
-    .number({ invalid_type_error: "预警阈值必须是数字。" })
-    .int("预警阈值必须是整数。")
-    .min(0, "预警阈值不能为负数。"),
+  // lowStockThreshold: z.coerce // Removed
+  //   .number({ invalid_type_error: "预警阈值必须是数字。" })
+  //   .int("预警阈值必须是整数。")
+  //   .min(0, "预警阈值不能为负数。"),
   imageUrl: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
   if (data.category === "INGREDIENT") {
@@ -67,7 +67,7 @@ export function AddProductForm() {
       category: undefined,
       unit: "",
       shelfLifeDays: undefined,
-      lowStockThreshold: 5, // Default value for low stock threshold
+      // lowStockThreshold: 5, // Removed
       imageUrl: null,
     },
   });
@@ -173,17 +173,18 @@ export function AddProductForm() {
       category: data.category as ProductCategory,
       unit: data.unit,
       shelfLifeDays: data.category === "INGREDIENT" ? data.shelfLifeDays! : null,
-      lowStockThreshold: data.lowStockThreshold, // Added lowStockThreshold
+      // lowStockThreshold: data.lowStockThreshold, // Removed
       imageUrl: imageDataUri,
     };
-    const result = await addProduct(productDataToAdd);
+    // Type assertion to satisfy addProduct's expectation, as lowStockThreshold is removed from the type Omit<Product, ...>
+    const result = await addProduct(productDataToAdd as Omit<Product, 'id' | 'createdAt' | 'isArchived'>);
     if (result) {
       form.reset({
         name: "",
         category: undefined,
         unit: "",
         shelfLifeDays: undefined,
-        lowStockThreshold: 5, // Reset to default
+        // lowStockThreshold: 5, // Removed
         imageUrl: null,
       });
       setImageDataUri(null);
@@ -281,32 +282,7 @@ export function AddProductForm() {
               />
             )}
 
-            <FormField
-              control={form.control}
-              name="lowStockThreshold"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>库存预警阈值 ({form.getValues("unit") || '单位'})</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      placeholder="例如: 5" 
-                      {...field} 
-                      value={field.value === undefined ? '' : String(field.value)}
-                      onChange={(e) => {
-                          const val = e.target.value;
-                          field.onChange(val === '' ? undefined : parseInt(val, 10));
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    当此产品的库存数量低于或等于此值时，将触发低库存预警。
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
+            {/* Removed lowStockThreshold FormField */}
 
             <FormField
               control={form.control}
