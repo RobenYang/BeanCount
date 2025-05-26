@@ -12,9 +12,9 @@ const MAX_ERROR_LOGS = 100; // Limit the number of logs stored in localStorage
 interface ErrorContextType {
   errorLogs: ClientErrorLog[];
   addErrorLog: (
-    error: Error | string, 
-    errorInfo?: React.ErrorInfo, 
-    type?: 'React ErrorBoundary' | 'Global onerror' | 'Unhandled Promise Rejection' | 'Manual Log'
+    error: Error | string,
+    errorInfo?: React.ErrorInfo | { componentStack?: string }, // Allow passing componentStack directly for API errors
+    type?: 'React ErrorBoundary' | 'Global onerror' | 'Unhandled Promise Rejection' | 'Manual Log' | 'API Call Error' | 'Client Validation Error'
   ) => void;
   clearErrorLogs: () => void;
   exportErrorLogs: () => void;
@@ -50,10 +50,18 @@ export const ErrorProvider = ({ children }: { children: ReactNode }) => {
 
   const addErrorLog = useCallback((
     error: Error | string,
-    errorInfo?: React.ErrorInfo,
-    type: 'React ErrorBoundary' | 'Global onerror' | 'Unhandled Promise Rejection' | 'Manual Log' = 'Manual Log'
+    errorInfo?: React.ErrorInfo | { componentStack?: string }, // Updated type
+    type: 'React ErrorBoundary' | 'Global onerror' | 'Unhandled Promise Rejection' | 'Manual Log' | 'API Call Error' | 'Client Validation Error' = 'Manual Log'
   ) => {
     console.error(`[${type}]`, error, errorInfo); // Also log to console for immediate visibility
+
+    let componentStackMessage: string | undefined = undefined;
+    if (errorInfo) {
+        if ('componentStack' in errorInfo && typeof errorInfo.componentStack === 'string') {
+            componentStackMessage = errorInfo.componentStack;
+        }
+    }
+
 
     const newLogEntry: ClientErrorLog = {
       id: nanoid(),
@@ -61,7 +69,7 @@ export const ErrorProvider = ({ children }: { children: ReactNode }) => {
       message: typeof error === 'string' ? error : error.message,
       stack: typeof error === 'string' ? undefined : error.stack,
       errorType: type,
-      componentStack: errorInfo?.componentStack,
+      componentStack: componentStackMessage,
       url: typeof window !== 'undefined' ? window.location.href : undefined,
     };
 
@@ -81,7 +89,7 @@ export const ErrorProvider = ({ children }: { children: ReactNode }) => {
       if (originalOnError) {
         return originalOnError.apply(window, [message, source, lineno, colno, error]);
       }
-      return false; 
+      return false;
     };
 
     window.onunhandledrejection = (event: PromiseRejectionEvent) => {
@@ -104,7 +112,10 @@ export const ErrorProvider = ({ children }: { children: ReactNode }) => {
 
   const exportErrorLogs = useCallback(() => {
     if (errorLogs.length === 0) {
-      alert("没有可导出的错误日志。"); // Or use a toast
+      // Using globalToast from InventoryContext is not ideal here,
+      // but for simplicity let's assume it's available or use alert.
+      // In a larger app, toast might come from a more global UI context.
+      alert("没有可导出的错误日志。");
       return;
     }
     const jsonString = JSON.stringify(errorLogs, null, 2);
@@ -133,3 +144,5 @@ export const useErrorLogger = () => {
   }
   return context;
 };
+
+    
