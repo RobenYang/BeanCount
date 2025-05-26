@@ -138,11 +138,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     // Basic client-side validation for required fields
     if (typeof settingsToUpdate.expiryWarningDays !== 'number' || settingsToUpdate.expiryWarningDays < 0) {
-        toast({ title: "错误", description: "临近过期预警天数必须是一个非负数。", variant: "destructive" });
+        toast({ title: "错误", description: "有效的临近过期预警天数 (非负数) 为必填项。", variant: "destructive" });
         return;
     }
     if (typeof settingsToUpdate.depletionWarningDays !== 'number' || settingsToUpdate.depletionWarningDays < 0) {
-        toast({ title: "错误", description: "预计耗尽预警天数必须是一个非负数。", variant: "destructive" });
+        toast({ title: "错误", description: "有效的预计耗尽预警天数 (非负数) 为必填项。", variant: "destructive" });
         return;
     }
 
@@ -207,6 +207,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
       if (settingsWereIncomplete && process.env.POSTGRES_URL) { 
         console.log("Attempting to save complete default settings back to DB due to incomplete fetch.");
+        // Ensure updateAppSettings is called with the fully formed completeSettings object
         await updateAppSettings(completeSettings, false); 
       }
 
@@ -522,17 +523,148 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   }, [products, transactions, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings, appSettings]);
 
 
+  const addSampleDataIfNeeded = useCallback(async () => {
+    if (process.env.NODE_ENV === 'development' && !process.env.POSTGRES_URL) {
+        console.warn("Running in DB-less dev mode. Skipping sample data creation via API.");
+        return;
+    }
+
+    // Check if products already exist (via API) to prevent re-adding sample data
+    try {
+        const productsResponse = await fetch('/api/products', { headers: getApiAuthHeaders() });
+        if (productsResponse.ok) {
+            const existingProducts = await productsResponse.json();
+            if (Array.isArray(existingProducts) && existingProducts.length > 0) {
+                console.log("Products already exist, skipping sample data generation.");
+                return;
+            }
+        } else {
+            console.error("Failed to fetch existing products to check for sample data generation.");
+            // Potentially proceed if the error is transient or if it's a clean DB
+        }
+    } catch (e) {
+        console.error("Error checking existing products:", e);
+    }
+
+
+    console.log("Attempting to add sample data via API...");
+
+    const sampleProductsData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>[] = [
+      { name: '全脂牛奶', category: 'INGREDIENT', unit: '升', shelfLifeDays: 7, depletionWarningDays: 3, imageUrl: 'https://placehold.co/64x64.png?text=牛奶' },
+      { name: '阿拉比卡咖啡豆', category: 'INGREDIENT', unit: '公斤', shelfLifeDays: 365, depletionWarningDays: 14, imageUrl: 'https://placehold.co/64x64.png?text=豆' },
+      { name: '香草糖浆', category: 'INGREDIENT', unit: '瓶', shelfLifeDays: 730, depletionWarningDays: 30, imageUrl: 'https://placehold.co/64x64.png?text=糖浆' },
+      { name: '马克杯', category: 'NON_INGREDIENT', unit: '个', shelfLifeDays: null, depletionWarningDays: 5, imageUrl: 'https://placehold.co/64x64.png?text=杯' },
+    ];
+    
+    const createdSampleProducts: Product[] = [];
+    for (const pData of sampleProductsData) {
+        const newProd = await addProduct({ ...pData, depletionWarningDays: pData.depletionWarningDays! }); // addProduct now expects depletionWarningDays if not using global
+        if (newProd) createdSampleProducts.push(newProd);
+    }
+    
+    if (createdSampleProducts.length === 0) {
+        console.warn("No sample products were created, skipping batch and transaction sample data.");
+        return;
+    }
+
+    const milk = createdSampleProducts.find(p => p.name === '全脂牛奶');
+    const coffeeBeans = createdSampleProducts.find(p => p.name === '阿拉比卡咖啡豆');
+    const vanillaSyrup = createdSampleProducts.find(p => p.name === '香草糖浆');
+    const mug = createdSampleProducts.find(p => p.name === '马克杯');
+
+    const sampleBatchesData = [
+      ...(milk ? [
+        { productId: milk.id, productionDate: formatISO(subDays(new Date(), 30)), initialQuantity: 20, unitCost: 8.5 },
+        { productId: milk.id, productionDate: formatISO(subDays(new Date(), 2)), initialQuantity: 15, unitCost: 8.6 },
+      ] : []),
+      ...(coffeeBeans ? [
+        { productId: coffeeBeans.id, productionDate: formatISO(subDays(new Date(), 60)), initialQuantity: 10, unitCost: 120 },
+      ] : []),
+      ...(vanillaSyrup ? [
+        { productId: vanillaSyrup.id, productionDate: formatISO(subDays(new Date(), 90)), initialQuantity: 5, unitCost: 25 },
+      ] : []),
+      ...(mug ? [
+        { productId: mug.id, productionDate: formatISO(subDays(new Date(), 15)), initialQuantity: 50, unitCost: 15 },
+      ] : []),
+    ];
+
+    const createdSampleBatches: Batch[] = [];
+    for (const bData of sampleBatchesData) {
+        const newBatch = await addBatch(bData);
+        if (newBatch) createdSampleBatches.push(newBatch);
+    }
+
+    // Simulate some consumption from last week for analysis demonstration
+    const { start: lastWeekStart, end: lastWeekEnd } = getLastFullWeekDateRange();
+    const sampleOutflowTransactions: Omit<Transaction, 'id' | 'timestamp'>[] = [];
+    const batchQuantitiesToUpdate: Record<string, number> = {};
+
+    if (milk && createdSampleBatches.some(b => b.productId === milk.id)) {
+        const milkBatchForOutflow = createdSampleBatches.find(b => b.productId === milk.id && b.initialQuantity > 5); // Find a batch with enough stock
+        if (milkBatchForOutflow) {
+            const milkConsumedLastWeek = 7; // e.g., 1 liter per day
+            sampleOutflowTransactions.push({
+                productId: milk.id, productName: milk.name, batchId: milkBatchForOutflow.id, type: 'OUT', quantity: milkConsumedLastWeek, reason: 'SALE', unitCostAtTransaction: milkBatchForOutflow.unitCost, 
+                timestamp: formatISO(addDays(lastWeekStart, 3)) // Mid-week
+            });
+            batchQuantitiesToUpdate[milkBatchForOutflow.id] = (batchQuantitiesToUpdate[milkBatchForOutflow.id] || milkBatchForOutflow.initialQuantity) - milkConsumedLastWeek;
+        }
+    }
+     if (coffeeBeans && createdSampleBatches.some(b => b.productId === coffeeBeans.id)) {
+        const coffeeBatchForOutflow = createdSampleBatches.find(b => b.productId === coffeeBeans.id && b.initialQuantity > 2);
+        if (coffeeBatchForOutflow) {
+            const coffeeConsumedLastWeek = 1.5; // e.g., 1.5 kg
+             sampleOutflowTransactions.push({
+                productId: coffeeBeans.id, productName: coffeeBeans.name, batchId: coffeeBatchForOutflow.id, type: 'OUT', quantity: coffeeConsumedLastWeek, reason: 'SALE', unitCostAtTransaction: coffeeBatchForOutflow.unitCost,
+                timestamp: formatISO(addDays(lastWeekStart, 4))
+            });
+            batchQuantitiesToUpdate[coffeeBatchForOutflow.id] = (batchQuantitiesToUpdate[coffeeBatchForOutflow.id] || coffeeBatchForOutflow.initialQuantity) - coffeeConsumedLastWeek;
+        }
+    }
+
+    // Update batch quantities in DB
+    for (const batchIdToUpdate in batchQuantitiesToUpdate) {
+        const newQuantity = batchQuantitiesToUpdate[batchIdToUpdate];
+        if (newQuantity >= 0) {
+            try {
+                const updateResp = await fetch(`/api/batches/${batchIdToUpdate}`, {
+                    method: 'PUT',
+                    headers: getApiAuthHeaders(),
+                    body: JSON.stringify({ currentQuantity: newQuantity }),
+                });
+                if (!updateResp.ok) {
+                    console.error(`Failed to update sample batch ${batchIdToUpdate} quantity in DB`);
+                }
+            } catch (e) {
+                 console.error(`Error updating sample batch ${batchIdToUpdate} quantity:`, e);
+            }
+        }
+    }
+    
+    // Add outflow transactions to DB
+    for (const txData of sampleOutflowTransactions) {
+        await addTransactionAPI({...txData, timestamp: txData.timestamp || formatISO(new Date()) });
+    }
+
+    // Refetch all data to ensure UI consistency after sample data manipulation
+    await Promise.all([fetchProducts(), fetchBatches(), fetchTransactions()]);
+    console.log("Sample data generation complete.");
+
+  }, [addProduct, addBatch, addTransactionAPI, fetchProducts, fetchBatches, fetchTransactions]);
+
+
   useEffect(() => {
+    // Initialize data fetching when the provider mounts
     Promise.all([
         fetchProducts(),
         fetchBatches(),
         fetchTransactions(),
         fetchAppSettings()
-    ]);
+    ]).then(() => {
+        // addSampleDataIfNeeded(); // This line can be uncommented to generate sample data
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
-
-  // Sample data initialization removed
+  }, []); // Empty dependency array ensures this runs only once on mount
   
   return (
     <InventoryContext.Provider value={{
