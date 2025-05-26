@@ -15,15 +15,15 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch"; // Import Switch
+import { Switch } from "@/components/ui/switch";
 import { useInventory } from "@/contexts/InventoryContext";
 import type { AppSettings } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Save, Palette, Loader2, AlertTriangle, Download, Trash2, BookText, Accessibility } from "lucide-react"; // Added Accessibility icon
+import { Save, Palette, Loader2, AlertTriangle, Download, Trash2, BookText, Accessibility, Hourglass } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { useErrorLogger } from "@/contexts/ErrorContext"; 
+import { useErrorLogger } from "@/contexts/ErrorContext";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatISO } from 'date-fns';
@@ -34,6 +34,10 @@ const settingsFormSchema = z.object({
     .number({ invalid_type_error: "必须输入数字。" })
     .int("必须是整数。")
     .min(0, "天数不能为负。"),
+  depletionWarningDays: z.coerce // New field for depletion warning
+    .number({ invalid_type_error: "必须输入数字。" })
+    .int("必须是整数。")
+    .min(0, "天数不能为负。"),
 });
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
@@ -41,15 +45,16 @@ type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
 export function SettingsForm() {
   const { appSettings, updateAppSettings, isLoadingSettings } = useInventory();
-  const { errorLogs, exportErrorLogs, clearErrorLogs } = useErrorLogger(); 
+  const { errorLogs, exportErrorLogs, clearErrorLogs } = useErrorLogger();
   const { currentUser } = useAuth();
   const [selectedTheme, setSelectedTheme] = useState<string>('light');
-  const [isLargeTextMode, setIsLargeTextMode] = useState<boolean>(false); // State for large text mode
+  const [isLargeTextMode, setIsLargeTextMode] = useState<boolean>(false);
 
   const settingsHookForm = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
-    defaultValues: { 
-      expiryWarningDays: appSettings?.expiryWarningDays || 7, 
+    defaultValues: {
+      expiryWarningDays: appSettings?.expiryWarningDays || 7,
+      depletionWarningDays: appSettings?.depletionWarningDays || 5,
     },
   });
 
@@ -57,27 +62,23 @@ export function SettingsForm() {
     if (!isLoadingSettings && appSettings) {
       settingsHookForm.reset({
           expiryWarningDays: appSettings.expiryWarningDays,
+          depletionWarningDays: appSettings.depletionWarningDays,
       });
     }
   }, [appSettings, isLoadingSettings, settingsHookForm]);
 
   useEffect(() => {
-    // Theme Initializer
     const storedTheme = localStorage.getItem('theme');
     if (storedTheme) {
       setSelectedTheme(storedTheme);
-      // Actual class application is done by ThemeInitializer.tsx
     } else {
-      // Fallback to system preference or default if not set
       const currentTheme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
       setSelectedTheme(currentTheme);
     }
 
-    // Large Text Mode Initializer
     const storedTextSizeMode = localStorage.getItem('textSizeMode');
     if (storedTextSizeMode === 'large') {
       setIsLargeTextMode(true);
-      // Actual class application is done by ThemeInitializer.tsx
     } else {
       setIsLargeTextMode(false);
     }
@@ -113,7 +114,7 @@ export function SettingsForm() {
         <CardHeader>
           <CardTitle>预警阈值设置</CardTitle>
           <CardDescription>
-            自定义临近过期的预警提醒阈值。低库存阈值在每个产品添加或编辑时单独设置。
+            自定义产品的预警提醒阈值。
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -130,17 +131,38 @@ export function SettingsForm() {
                   name="expiryWarningDays"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>临近过期预警天数</FormLabel>
+                      <FormLabel>食材临近过期预警天数</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="number" 
-                          placeholder="例如: 7" 
+                        <Input
+                          type="number"
+                          placeholder="例如: 7"
                           {...field}
                           onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
                         />
                       </FormControl>
                       <FormDescription>
-                        当食材类产品距离过期日期小于或等于此天数时，将标记为临近过期。
+                        当食材类产品距离其物理过期日期小于或等于此天数时，将标记为临近过期。
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={settingsHookForm.control}
+                  name="depletionWarningDays"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>预计耗尽预警天数</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="例如: 5"
+                          {...field}
+                          onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        根据上个完整周的日均消耗预测，当产品预计剩余消耗天数小于或等于此值时，将标记为即将耗尽。
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -230,11 +252,11 @@ export function SettingsForm() {
                 </div>
                 <BookText className="w-8 h-8 text-muted-foreground" />
             </div>
-            
+
             {errorLogs.length > 0 && (
               <ScrollArea className="h-64 w-full rounded-md border p-3">
                 <div className="space-y-3">
-                  {errorLogs.slice().reverse().map(log => ( 
+                  {errorLogs.slice().reverse().map(log => (
                     <div key={log.id} className="p-2 border rounded-md bg-background text-xs">
                       <p><strong>时间:</strong> {formatISO(new Date(log.timestamp), { representation: 'complete' })}</p>
                       <p><strong>类型:</strong> {log.errorType}</p>

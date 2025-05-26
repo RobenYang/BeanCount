@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Smile, CircleDollarSign, Package as PackageIcon } from "lucide-react";
+import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Smile, CircleDollarSign, Package as PackageIcon, Hourglass } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -14,15 +14,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { subDays, parseISO, isWithinInterval, endOfDay, differenceInDays, format } from "date-fns";
-import type { Transaction, Product } from "@/lib/types"; // Removed Batch as it's not directly used here after card changes
+import type { Transaction, Product } from "@/lib/types";
 import { zhCN } from 'date-fns/locale';
 
-interface LowStockProductDetail {
+interface DepletingSoonProductDetail {
   id: string;
   name: string;
   currentQuantity: number;
   unit: string;
-  threshold: number;
+  daysToDepletion: number;
+  predictedDepletionDate: string;
+  depletionWarningDays: number;
 }
 
 interface NearingExpiryProductDetail {
@@ -75,19 +77,28 @@ export default function DashboardPage() {
     return total + totalValue;
   }, 0);
 
-  const lowStockProductsDetails: LowStockProductDetail[] = activeProducts
+  const depletingSoonProductsDetails: DepletingSoonProductDetail[] = activeProducts
     .map(p => {
+      const analysis = getSingleProductAnalysisSummary(p.id);
       const { totalQuantity } = getProductStockDetails(p.id);
-      return { product: p, totalQuantity };
+      return { product: p, analysis, totalQuantity };
     })
-    .filter(({ product, totalQuantity }) => totalQuantity < product.lowStockThreshold)
-    .map(({ product, totalQuantity }) => ({
+    .filter(({ analysis }) =>
+      analysis &&
+      analysis.daysToDepletion !== undefined &&
+      analysis.daysToDepletion !== Infinity &&
+      analysis.daysToDepletion <= appSettings.depletionWarningDays
+    )
+    .map(({ product, analysis, totalQuantity }) => ({
       id: product.id,
       name: product.name,
       currentQuantity: totalQuantity,
       unit: product.unit,
-      threshold: product.lowStockThreshold,
+      daysToDepletion: analysis!.daysToDepletion!,
+      predictedDepletionDate: analysis!.predictedDepletionDate,
+      depletionWarningDays: appSettings.depletionWarningDays,
     }));
+
 
   const nearingExpiryProductsDetails: NearingExpiryProductDetail[] = activeProducts.flatMap(p => {
     if (p.category !== 'INGREDIENT') return [];
@@ -110,7 +121,7 @@ export default function DashboardPage() {
       }));
   });
 
-  const lowStockItemsCount = lowStockProductsDetails.length;
+  const depletingSoonItemsCount = depletingSoonProductsDetails.length;
   const itemsNearingExpiryCount = nearingExpiryProductsDetails.length;
 
   const isLoadingContextData = isLoadingProducts || isLoadingBatches || isLoadingTransactions || isLoadingSettings;
@@ -160,7 +171,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="pt-2 pb-2 text-xs text-muted-foreground min-h-[4rem]"> {/* Adjusted min-height */}
+              <CardContent className="pt-2 pb-2 text-xs text-muted-foreground min-h-[4rem]">
                  <Skeleton className="h-4 w-full mb-1" />
                  <Skeleton className="h-4 w-2/3" />
               </CardContent>
@@ -227,9 +238,9 @@ export default function DashboardPage() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{lowStockItemsCount + itemsNearingExpiryCount}</div>
+            <div className="text-2xl font-bold">{depletingSoonItemsCount + itemsNearingExpiryCount}</div>
             <p className="text-xs text-muted-foreground">
-              {lowStockItemsCount} 项低库存, {itemsNearingExpiryCount} 项临近过期
+              {depletingSoonItemsCount} 项即将耗尽, {itemsNearingExpiryCount} 项临近过期
             </p>
           </CardContent>
         </Card>
@@ -273,36 +284,40 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle>预警产品详情</DialogTitle>
             <DialogDescription>
-              以下是需要您关注的低库存和临近过期的产品。
+              以下是需要您关注的即将耗尽和临近过期的产品。
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[60vh] pr-4">
             <div className="space-y-6 py-4">
               <div>
-                <h3 className="text-lg font-semibold mb-2">低库存产品 ({lowStockProductsDetails.length})</h3>
-                {lowStockProductsDetails.length > 0 ? (
+                <h3 className="text-lg font-semibold mb-2">即将耗尽产品 ({depletingSoonProductsDetails.length})</h3>
+                {depletingSoonProductsDetails.length > 0 ? (
                   <Card>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>产品名称</TableHead>
                           <TableHead className="text-right">当前数量</TableHead>
-                          <TableHead className="text-right">预警阈值</TableHead>
+                          <TableHead className="text-right">预计剩余天数</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {lowStockProductsDetails.map(item => (
+                        {depletingSoonProductsDetails.map(item => (
                           <TableRow key={item.id}>
                             <TableCell>{item.name}</TableCell>
                             <TableCell className="text-right">{item.currentQuantity} {item.unit}</TableCell>
-                            <TableCell className="text-right">{item.threshold} {item.unit}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant="destructive">
+                                {item.daysToDepletion} 天 (阈值: {item.depletionWarningDays} 天)
+                              </Badge>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </Card>
                 ) : (
-                  <p className="text-sm text-muted-foreground">暂无低库存产品。</p>
+                  <p className="text-sm text-muted-foreground">暂无即将耗尽产品。</p>
                 )}
               </div>
 

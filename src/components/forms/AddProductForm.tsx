@@ -21,7 +21,7 @@ import type { ProductCategory } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PlusCircle, Image as ImageIcon, Camera, XCircle, UploadCloud } from "lucide-react";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertTitle, AlertDescription as AlertDesc } from "@/components/ui/alert";
 
@@ -31,6 +31,7 @@ const productCategories: { value: ProductCategory; label: string }[] = [
   { value: "NON_INGREDIENT", label: "非食材 (无生产/保质期)" },
 ];
 
+// lowStockThreshold removed from schema
 const productFormSchema = z.object({
   name: z.string().min(2, "产品名称至少需要2个字符。"),
   category: z.enum(["INGREDIENT", "NON_INGREDIENT"], {
@@ -38,10 +39,6 @@ const productFormSchema = z.object({
   }),
   unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
   shelfLifeDays: z.coerce.number().int().optional(),
-  lowStockThreshold: z.coerce
-    .number({ invalid_type_error: "库存预警阈值必须是数字。" })
-    .int("库存预警阈值必须是整数。")
-    .min(0, "库存预警阈值不能为负。"),
   imageUrl: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
   if (data.category === "INGREDIENT") {
@@ -67,7 +64,7 @@ export function AddProductForm() {
       category: undefined,
       unit: "",
       shelfLifeDays: undefined,
-      lowStockThreshold: 5, // Default low stock threshold
+      // lowStockThreshold: 5, // Removed
       imageUrl: null,
     },
   });
@@ -159,7 +156,7 @@ export function AddProductForm() {
       stopCamera();
     }
   };
-  
+
   useEffect(() => {
     return () => { // Cleanup on unmount
       stopCamera();
@@ -173,7 +170,7 @@ export function AddProductForm() {
       category: data.category as ProductCategory,
       unit: data.unit,
       shelfLifeDays: data.category === "INGREDIENT" ? data.shelfLifeDays! : null,
-      lowStockThreshold: data.lowStockThreshold,
+      // lowStockThreshold: data.lowStockThreshold, // Removed
       imageUrl: imageDataUri,
     };
     addProduct(productDataToAdd);
@@ -182,7 +179,7 @@ export function AddProductForm() {
       category: undefined,
       unit: "",
       shelfLifeDays: undefined,
-      lowStockThreshold: 5, // Reset to default
+      // lowStockThreshold: 5, // Removed
       imageUrl: null,
     });
     setImageDataUri(null);
@@ -260,9 +257,9 @@ export function AddProductForm() {
                   <FormItem>
                     <FormLabel>标准保质期 (天)</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
-                        placeholder="例如: 365 代表 1 年" 
+                      <Input
+                        type="number"
+                        placeholder="例如: 365 代表 1 年"
                         value={field.value === undefined ? '' : String(field.value)}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -279,33 +276,7 @@ export function AddProductForm() {
               />
             )}
 
-            <FormField
-              control={form.control}
-              name="lowStockThreshold"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>库存预警阈值</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      placeholder="例如: 5"
-                      value={field.value === undefined ? '' : String(field.value)}
-                      onChange={(e) => {
-                          const val = e.target.value;
-                          field.onChange(val === '' ? undefined : parseInt(val, 10));
-                      }}
-                      onBlur={field.onBlur}
-                      name={field.name}
-                      ref={field.ref}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    当此产品库存数量低于或等于此值时，将标记为低库存。
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* lowStockThreshold field removed */}
 
             <FormField
               control={form.control}
@@ -320,7 +291,7 @@ export function AddProductForm() {
                     <div className="flex items-center justify-center w-full h-48 border-2 border-dashed rounded-lg bg-muted/50">
                       {imageDataUri ? (
                         <div className="relative w-full h-full">
-                           <Image src={imageDataUri} alt="产品预览" layout="fill" objectFit="contain" className="rounded-md" />
+                           <NextImage src={imageDataUri} alt="产品预览" layout="fill" objectFit="contain" className="rounded-md" />
                            <Button
                             variant="ghost"
                             size="icon"
@@ -359,7 +330,7 @@ export function AddProductForm() {
                          </Button>
                        </div>
                     )}
-                    
+
                     {showCamera && hasCameraPermission === true && (
                         <div className="space-y-2">
                             <video ref={videoRef} className="w-full aspect-video rounded-md bg-black" autoPlay playsInline muted />

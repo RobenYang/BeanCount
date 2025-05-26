@@ -5,24 +5,24 @@ export interface Product {
   id: string;
   name: string;
   category: ProductCategory;
-  unit: string; 
-  shelfLifeDays: number | null; 
-  lowStockThreshold: number; 
-  imageUrl?: string; 
-  createdAt: string; 
-  isArchived?: boolean; 
+  unit: string;
+  shelfLifeDays: number | null;
+  // lowStockThreshold: number; // Removed: Replaced by depletionWarningDays in AppSettings
+  imageUrl?: string;
+  createdAt: string;
+  isArchived?: boolean;
 }
 
 export interface Batch {
   id: string;
   productId: string;
-  productName?: string; 
-  productionDate: string | null; 
-  expiryDate: string | null; 
+  productName?: string;
+  productionDate: string | null;
+  expiryDate: string | null;
   initialQuantity: number;
   currentQuantity: number;
   unitCost: number;
-  createdAt: string; 
+  createdAt: string;
 }
 
 export type TransactionType = 'IN' | 'OUT';
@@ -45,19 +45,20 @@ export const OUTFLOW_REASONS_WITH_LABELS: OutflowReasonItem[] = [
 export interface Transaction {
   id: string;
   productId: string;
-  productName?: string; 
+  productName?: string;
   batchId?: string;
   type: TransactionType;
-  quantity: number; 
-  timestamp: string; 
+  quantity: number;
+  timestamp: string;
   reason?: OutflowReasonValue;
   notes?: string;
-  unitCostAtTransaction?: number; 
-  isCorrectionIncrease?: boolean; 
+  unitCostAtTransaction?: number;
+  isCorrectionIncrease?: boolean;
 }
 
 export interface AppSettings {
-  expiryWarningDays: number;
+  expiryWarningDays: number; // For ingredient physical expiry
+  depletionWarningDays: number; // For stock depletion prediction warning
 }
 
 export type StockAnalysisTimeDimensionValue = 'YESTERDAY' | 'LAST_3_DAYS' | 'LAST_7_DAYS' | 'LAST_FULL_WEEK' | 'LAST_30_DAYS';
@@ -73,15 +74,15 @@ export interface ProductStockAnalysis {
   productUnit: string;
   currentStock: number;
   avgDailyConsumption: number;
-  predictedDepletionDate: string; 
-  daysToDepletion?: number; 
-  analysisPeriodLabel: string; 
+  predictedDepletionDate: string;
+  daysToDepletion?: number;
+  analysisPeriodLabel: string;
 }
 
 export interface User {
   id: string;
   username: string;
-  password?: string; 
+  password?: string;
   isSuperAdmin?: boolean;
 }
 
@@ -90,19 +91,19 @@ export interface ClientErrorLog {
   timestamp: string;
   message: string;
   stack?: string;
-  errorType?: string; 
-  componentStack?: string; 
-  url?: string; 
+  errorType?: string;
+  componentStack?: string;
+  url?: string;
 }
 
-export type ProductColumnKey = 
-  | 'name' 
-  | 'category' 
-  | 'unit' 
-  | 'shelfLifeDays' 
-  | 'lowStockThreshold' 
-  | 'totalQuantity' 
-  | 'totalValue' 
+export type ProductColumnKey =
+  | 'name'
+  | 'category'
+  | 'unit'
+  | 'shelfLifeDays'
+  // | 'lowStockThreshold' // Removed
+  | 'totalQuantity'
+  | 'totalValue'
   | 'createdAt';
 
 export interface ProductTableColumn {
@@ -110,21 +111,21 @@ export interface ProductTableColumn {
   label: string;
   defaultVisible: boolean;
   sortable: boolean;
-  isNumeric?: boolean; 
-  isDate?: boolean;    
+  isNumeric?: boolean;
+  isDate?: boolean;
   headerClassName?: string;
   cellClassName?: string;
   getValue: (product: Product, details: { totalQuantity: number; totalValue: number; batches: Batch[] }) => string | number | null;
 }
 
 // For Transaction Page Filters
-export type TransactionTimeFilterValue = 
+export type TransactionTimeFilterValue =
   | 'ALL'
-  | 'TODAY' 
-  | 'YESTERDAY' 
+  | 'TODAY'
+  | 'YESTERDAY'
   | 'LAST_7_DAYS' // Up to and including yesterday
   | 'LAST_30_DAYS' // Up to and including yesterday
-  | 'THIS_MONTH' 
+  | 'THIS_MONTH'
   | 'LAST_MONTH';
 
 export interface TransactionTimeFilterOption {

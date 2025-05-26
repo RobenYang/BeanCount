@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { 
-    PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings, 
+import {
+    PlusCircle, Archive, Undo, PackageSearch, Package, ChevronDown, ChevronRight, Settings,
     Pencil, Search as SearchIcon, Filter, Loader2, ArrowUpDown, Eye, GripVertical, ArrowUp, ArrowDown,
-    Download, FileText // Added Download and FileText icons
+    Download, FileText
 } from "lucide-react";
 import Link from "next/link";
 import { format, parseISO, differenceInDays, isSameDay, startOfDay } from "date-fns";
@@ -20,7 +20,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { EditProductForm } from "@/components/forms/EditProductForm";
-import { DailyStockReportModal } from "@/components/modals/DailyStockReportModal"; // Import the new modal
+import { DailyStockReportModal } from "@/components/modals/DailyStockReportModal";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,18 +50,19 @@ const productCategoryOptions: { value: ProductCategory | 'ALL'; label: string }[
     { value: "NON_INGREDIENT", label: formatProductCategory("NON_INGREDIENT") },
 ];
 
+// lowStockThreshold column removed
 const ALL_PRODUCT_COLUMNS: ProductTableColumn[] = [
   { id: 'name', label: '名称', defaultVisible: true, sortable: false, getValue: (p) => p.name, isNumeric: false, isDate: false, headerClassName: "min-w-[200px]" },
   { id: 'category', label: '类别', defaultVisible: true, sortable: false, getValue: (p) => formatProductCategory(p.category), isNumeric: false, isDate: false },
   { id: 'unit', label: '单位', defaultVisible: true, sortable: false, getValue: (p) => p.unit, isNumeric: false, isDate: false },
   { id: 'shelfLifeDays', label: '保质期', defaultVisible: true, sortable: false, getValue: (p) => p.category === 'INGREDIENT' && p.shelfLifeDays ? p.shelfLifeDays : null, isNumeric: true, isDate: false, cellClassName: "text-center", headerClassName: "text-center" },
-  { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: true, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
+  // { id: 'lowStockThreshold', label: '预警阈值', defaultVisible: true, sortable: false, getValue: (p) => p.lowStockThreshold, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" }, // Removed
   { id: 'totalQuantity', label: '库存数量', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalQuantity, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'totalValue', label: '库存总价值', defaultVisible: true, sortable: true, getValue: (p, details) => details.totalValue, isNumeric: true, isDate: false, cellClassName: "text-right", headerClassName: "text-right" },
   { id: 'createdAt', label: '创建日期', defaultVisible: false, sortable: false, getValue: (p) => p.createdAt, isNumeric: false, isDate: true, cellClassName: "min-w-[150px]" },
 ];
 
-const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v2';
+const LOCAL_STORAGE_VISIBLE_COLUMNS_KEY = 'inventory_product_table_visible_columns_v3'; // Incremented version
 
 
 function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays }: { batches: Batch[], unit: string, productCategory: ProductCategory, expiryWarningDays: number }) {
@@ -100,11 +101,11 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
                 if (daysToExpiry <= expiryWarningDays) expiryBadgeVariant = "outline";
               }
             }
-            
+
             const displayDate = productCategory === 'NON_INGREDIENT' ? batch.productionDate || batch.createdAt : batch.productionDate;
 
             return (
-              <TableRow key={batch.id}>
+              <TableRow key={batch.id} className="break-inside-avoid-page">
                 {productCategory === 'INGREDIENT' && (
                   <TableCell className="text-xs">
                     {batch.productionDate ? format(parseISO(batch.productionDate), "yyyy-MM-dd") : 'N/A'}
@@ -142,16 +143,16 @@ function ProductBatchDetails({ batches, unit, productCategory, expiryWarningDays
   );
 }
 
-function ProductRow({ 
-    product, 
-    onArchive, 
+function ProductRow({
+    product,
+    onArchive,
     onUnarchive,
     onEdit,
     visibleColumns,
     productDetails
-}: { 
-    product: Product, 
-    onArchive: (id: string) => void, 
+}: {
+    product: Product,
+    onArchive: (id: string) => void,
     onUnarchive: (id: string) => void,
     onEdit: (product: Product) => void,
     visibleColumns: Record<ProductColumnKey, boolean>,
@@ -171,7 +172,7 @@ function ProductRow({
       setIsImageModalOpen(true);
     }
   };
-  
+
   const { totalQuantity, totalValue, batches } = productDetails;
 
   const mainRowCells = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]).map(colDef => {
@@ -218,7 +219,7 @@ function ProductRow({
 
   return (
     <>
-      <TableRow key={`${product.id}-main`} >
+      <TableRow key={`${product.id}-mainRow`} >
         <TableCell className="w-[50px]">
             <Button variant="ghost" size="icon" onClick={() => setIsExpanded(!isExpanded)} className="mr-2 h-8 w-8">
             {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -231,7 +232,7 @@ function ProductRow({
                 <Undo className="mr-2 h-4 w-4" /> 取消归档
             </Button>
             ) : (
-            <React.Fragment key="actions">
+            <React.Fragment key={`${product.id}-actions`}>
                 <Button variant="ghost" size="icon" onClick={() => onEdit(product)} title="编辑产品">
                     <Pencil className="h-4 w-4" />
                 </Button>
@@ -243,7 +244,7 @@ function ProductRow({
         </TableCell>
       </TableRow>
       {isExpanded && (
-        <TableRow key={`${product.id}-details`}>
+        <TableRow key={`${product.id}-detailsRow`}>
           <TableCell colSpan={numberOfTotalColumns}>
             <ProductBatchDetails batches={batches} unit={product.unit} productCategory={product.category} expiryWarningDays={appSettings.expiryWarningDays} />
           </TableCell>
@@ -275,17 +276,17 @@ export default function ProductsPage() {
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<ProductCategory | 'ALL'>('ALL');
-  const [isDailyReportModalOpen, setIsDailyReportModalOpen] = useState(false); // State for daily report modal
+  const [isDailyReportModalOpen, setIsDailyReportModalOpen] = useState(false);
 
   const initialVisibleColumns = useMemo(() => {
     const defaults = ALL_PRODUCT_COLUMNS.reduce((acc, col) => {
         acc[col.id] = col.defaultVisible;
         return acc;
     }, {} as Record<ProductColumnKey, boolean>);
-    defaults['name'] = true; 
+    defaults['name'] = true;
     return defaults;
   }, []);
-  
+
   const [visibleColumns, setVisibleColumns] = useState<Record<ProductColumnKey, boolean>>(initialVisibleColumns);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: null, direction: 'descending' });
 
@@ -295,9 +296,9 @@ export default function ProductsPage() {
     if (storedVisibleColumns) {
       try {
         const parsedColumns = JSON.parse(storedVisibleColumns) as Record<ProductColumnKey, boolean>;
-        const validatedColumns = { ...initialVisibleColumns }; 
+        const validatedColumns = { ...initialVisibleColumns };
         for (const colDef of ALL_PRODUCT_COLUMNS) {
-            if (colDef.id === 'name') { 
+            if (colDef.id === 'name') {
                 validatedColumns[colDef.id] = true;
             } else if (parsedColumns.hasOwnProperty(colDef.id)) {
                 validatedColumns[colDef.id] = parsedColumns[colDef.id];
@@ -313,7 +314,7 @@ export default function ProductsPage() {
     } else {
         setVisibleColumns(initialVisibleColumns);
     }
-  }, [initialVisibleColumns]); 
+  }, [initialVisibleColumns]);
 
   useEffect(() => {
     if (hasMounted) {
@@ -327,8 +328,8 @@ export default function ProductsPage() {
       if (prevSortConfig.key === columnKey) {
         if (prevSortConfig.direction === 'descending') {
           return { key: columnKey, direction: 'ascending' };
-        } else { 
-          return { key: null, direction: 'descending' }; 
+        } else {
+          return { key: null, direction: 'descending' };
         }
       } else {
         return { key: columnKey, direction: 'descending' };
@@ -337,8 +338,8 @@ export default function ProductsPage() {
   };
 
   const filteredAndSortedProducts = useMemo(() => {
-    if (!hasMounted || isLoadingProducts) return []; 
-    let tempProducts = products;
+    if (!hasMounted || isLoadingProducts) return [];
+    let tempProducts = [...products]; // Work with a copy
 
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
@@ -350,14 +351,14 @@ export default function ProductsPage() {
     if (categoryFilter !== 'ALL') {
       tempProducts = tempProducts.filter(product => product.category === categoryFilter);
     }
-    
+
     if (sortConfig.key) {
       const columnDefinition = ALL_PRODUCT_COLUMNS.find(c => c.id === sortConfig.key);
       if (columnDefinition && columnDefinition.sortable) {
-        tempProducts = [...tempProducts].sort((a, b) => {
+        tempProducts.sort((a, b) => { // Sort the copied array
           const detailsA = getProductStockDetails(a.id);
           const detailsB = getProductStockDetails(b.id);
-          
+
           let valA = columnDefinition.getValue(a, detailsA);
           let valB = columnDefinition.getValue(b, detailsB);
 
@@ -365,11 +366,11 @@ export default function ProductsPage() {
             valA = Number(valA) || 0;
             valB = Number(valB) || 0;
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else if (columnDefinition.isDate && valA && valB) { 
+          } else if (columnDefinition.isDate && valA && valB) {
             valA = parseISO(valA as string).getTime();
             valB = parseISO(valB as string).getTime();
             return sortConfig.direction === 'ascending' ? valA - valB : valB - valA;
-          } else { 
+          } else {
             valA = String(valA || '').toLowerCase();
             valB = String(valB || '').toLowerCase();
             return sortConfig.direction === 'ascending' ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN');
@@ -401,7 +402,7 @@ export default function ProductsPage() {
     setProductToEdit(null);
     setIsEditModalOpen(false);
   };
-  
+
   const getNoProductMessage = () => {
     if (searchTerm || categoryFilter !== 'ALL') {
         const searchMsg = searchTerm ? `搜索词 “${searchTerm}”` : "";
@@ -416,8 +417,8 @@ export default function ProductsPage() {
     if (searchTerm || categoryFilter !== 'ALL') return "请尝试调整您的搜索或筛选条件。";
     return activeTab === 'active' ? '添加一些产品开始吧！' : '您归档的产品将显示在此处。';
   };
-  
-  const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id]);
+
+  const displayedColumns = ALL_PRODUCT_COLUMNS.filter(col => visibleColumns[col.id] || col.id === 'name'); // Ensure 'name' is always considered for display logic
 
   const handleExportToCSV = useCallback(() => {
     const activeProductsWithDetails = products
@@ -431,7 +432,7 @@ export default function ProductsPage() {
 
     const csvRows: string[][] = [];
     const headers = [
-      "产品ID", "产品名称", "类别", "单位", "保质期(天)", "预警阈值", "创建日期", "是否已归档",
+      "产品ID", "产品名称", "类别", "单位", "保质期(天)", /* "预警阈值", Removed */ "创建日期", "是否已归档",
       "产品总库存", "产品总价值(¥)",
       "批次ID", "批次生产日期", "批次过期日期", "批次初始数量", "批次当前数量", "批次单位成本(¥)"
     ];
@@ -440,7 +441,7 @@ export default function ProductsPage() {
     const formatDateForCSV = (dateString: string | null) => {
         return dateString ? format(parseISO(dateString), "yyyy-MM-dd HH:mm:ss") : "";
     };
-    
+
     const formatCategoryForCSV = (category: ProductCategory) => {
         return category === "INGREDIENT" ? "食材" : "非食材";
     };
@@ -452,7 +453,7 @@ export default function ProductsPage() {
         formatCategoryForCSV(product.category),
         product.unit,
         product.category === 'INGREDIENT' && product.shelfLifeDays ? String(product.shelfLifeDays) : "",
-        String(product.lowStockThreshold),
+        // String(product.lowStockThreshold), // Removed
         formatDateForCSV(product.createdAt),
         product.isArchived ? "是" : "否",
         String(details.totalQuantity),
@@ -474,12 +475,12 @@ export default function ProductsPage() {
       } else {
         csvRows.push([
           ...commonProductData,
-          "", "", "", "", "", "" 
+          "", "", "", "", "", ""
         ]);
       }
     });
 
-    const csvString = csvRows.map(row => 
+    const csvString = csvRows.map(row =>
         row.map(field => {
             const strField = String(field === null || field === undefined ? "" : field);
             if (strField.includes(',') || strField.includes('\n') || strField.includes('"')) {
@@ -489,7 +490,7 @@ export default function ProductsPage() {
         }).join(',')
     ).join('\n');
 
-    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' }); 
+    const blob = new Blob([`\uFEFF${csvString}`], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob);
@@ -505,26 +506,26 @@ export default function ProductsPage() {
 
 
   if (!hasMounted || isLoadingProducts) {
-    const skeletonColumnCount = ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id]).length;
+    const skeletonColumnCount = ALL_PRODUCT_COLUMNS.filter(col => initialVisibleColumns[col.id] || col.id === 'name').length;
     return (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <h1 className="text-3xl font-bold flex items-center gap-2"><Package className="h-8 w-8" /> 产品管理</h1>
           <div className="flex gap-2">
-             <Skeleton className="h-10 w-[120px]" /> 
-             <Skeleton className="h-10 w-[140px]" /> 
+             <Skeleton className="h-10 w-[120px]" />
+             <Skeleton className="h-10 w-[140px]" />
              <Skeleton className="h-10 w-[160px]" />
           </div>
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
-          <Skeleton className="h-10 flex-grow" /> 
+          <Skeleton className="h-10 flex-grow" />
           <Skeleton className="h-10 w-full sm:w-[180px]" />
           <Skeleton className="h-10 w-10 sm:w-auto" />
         </div>
         <Tabs value="active">
           <TabsList>
-            <Skeleton className="h-9 w-24 mr-2 px-3 py-1.5" /> 
-            <Skeleton className="h-9 w-28 px-3 py-1.5" /> 
+            <Skeleton className="h-9 w-24 mr-2 px-3 py-1.5" />
+            <Skeleton className="h-9 w-28 px-3 py-1.5" />
           </TabsList>
           <TabsContent value="active">
             <Card>
@@ -546,8 +547,8 @@ export default function ProductsPage() {
                       <TableCell><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
                       {Array.from({ length: skeletonColumnCount }).map((_, colIdx) => (
                         <TableCell key={`skel-cell-${i}-${colIdx}`} >
-                            {colIdx === 0 ? 
-                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) : 
+                            {colIdx === 0 ?
+                                (<div className="flex items-center gap-3"><Skeleton className="h-12 w-12 rounded-md" /> <div><Skeleton className="h-5 w-24 mb-1" /><Skeleton className="h-4 w-16" /></div></div>) :
                                 (<Skeleton className="h-5 w-16" />)
                             }
                         </TableCell>
@@ -563,8 +564,8 @@ export default function ProductsPage() {
             </Card>
           </TabsContent>
         </Tabs>
-         {productToEdit && ( 
-            <EditProductForm 
+         {productToEdit && (
+            <EditProductForm
                 product={productToEdit}
                 isOpen={isEditModalOpen}
                 onClose={handleCloseEditModal}
@@ -601,7 +602,7 @@ export default function ProductsPage() {
             placeholder="搜索产品名称..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 h-10" 
+            className="w-full pl-10 h-10"
             />
         </div>
         <div className="w-full sm:w-auto sm:min-w-[180px]">
@@ -660,11 +661,10 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                     {displayedColumns.map(colDef => (
-                         <TableHead 
-                            key={colDef.id} 
-                            className={colDef.headerClassName}
+                         <TableHead
+                            key={colDef.id}
+                            className={cn(colDef.headerClassName, colDef.sortable && 'cursor-pointer')}
                             onClick={colDef.sortable ? () => handleSort(colDef.id) : undefined}
-                            style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
                             {colDef.sortable && (
@@ -683,11 +683,11 @@ export default function ProductsPage() {
                 </TableHeader>
                 <TableBody>
                   {productsToDisplay.map((product) => (
-                    <ProductRow 
-                        key={product.id} 
-                        product={product} 
-                        onArchive={archiveProduct} 
-                        onUnarchive={unarchiveProduct} 
+                    <ProductRow
+                        key={product.id}
+                        product={product}
+                        onArchive={archiveProduct}
+                        onUnarchive={unarchiveProduct}
                         onEdit={handleOpenEditModal}
                         visibleColumns={visibleColumns}
                         productDetails={getProductStockDetails(product.id)}
@@ -723,11 +723,10 @@ export default function ProductsPage() {
                   <TableRow>
                     <TableHead className="w-[50px]"></TableHead> {/* For expand icon */}
                      {displayedColumns.map(colDef => (
-                         <TableHead 
-                            key={colDef.id} 
-                            className={colDef.headerClassName}
+                         <TableHead
+                            key={colDef.id}
+                            className={cn(colDef.headerClassName, colDef.sortable && 'cursor-pointer')}
                             onClick={colDef.sortable ? () => handleSort(colDef.id) : undefined}
-                            style={colDef.sortable ? {cursor: 'pointer'} : {}}
                         >
                             {colDef.label}
                             {colDef.sortable && (
@@ -746,12 +745,12 @@ export default function ProductsPage() {
                 </TableHeader>
                 <TableBody>
                   {productsToDisplay.map((product) => (
-                    <ProductRow 
-                        key={product.id} 
-                        product={product} 
-                        onArchive={archiveProduct} 
-                        onUnarchive={unarchiveProduct} 
-                        onEdit={handleOpenEditModal} 
+                    <ProductRow
+                        key={product.id}
+                        product={product}
+                        onArchive={archiveProduct}
+                        onUnarchive={unarchiveProduct}
+                        onEdit={handleOpenEditModal}
                         visibleColumns={visibleColumns}
                         productDetails={getProductStockDetails(product.id)}
                     />
@@ -774,8 +773,8 @@ export default function ProductsPage() {
           )}
         </TabsContent>
       </Tabs>
-      {productToEdit && ( 
-        <EditProductForm 
+      {productToEdit && (
+        <EditProductForm
             product={productToEdit}
             isOpen={isEditModalOpen}
             onClose={handleCloseEditModal}
@@ -785,13 +784,12 @@ export default function ProductsPage() {
         <DailyStockReportModal
           isOpen={isDailyReportModalOpen}
           onClose={() => setIsDailyReportModalOpen(false)}
-          products={products.filter(p => !p.isArchived)} // Pass active products
+          products={products.filter(p => !p.isArchived)}
           transactions={transactions}
-          currentDate={new Date()} // Pass current date for the report
+          currentDate={new Date()}
           getProductStockDetails={getProductStockDetails}
         />
       )}
     </div>
   );
 }
-    

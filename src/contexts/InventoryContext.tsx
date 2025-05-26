@@ -1,22 +1,23 @@
 
 "use client";
 
-import type { Product, Batch, Transaction, OutflowReasonValue, TransactionType, ProductCategory, AppSettings, ProductStockAnalysis, StockAnalysisTimeDimensionValue } from '@/lib/types';
+import type { Product, Batch, Transaction, OutflowReasonValue, AppSettings, ProductStockAnalysis } from '@/lib/types';
 import { nanoid } from 'nanoid';
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { toast } from "@/hooks/use-toast";
-import { formatISO, parseISO, differenceInDays, startOfWeek, endOfWeek, subWeeks, isWithinInterval, addDays } from 'date-fns';
+import { formatISO, parseISO, differenceInDays, startOfWeek, endOfWeek, subWeeks, isWithinInterval, addDays, endOfDay } from 'date-fns';
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   expiryWarningDays: 7,
+  depletionWarningDays: 5, // Default depletion warning
 };
 
 // Helper to get the date range for 'LAST_FULL_WEEK'
 function getLastFullWeekDateRange(): { start: Date; end: Date; days: number } {
   const today = new Date();
-  const startOfThisCalendarWeek = startOfWeek(today, { weekStartsOn: 1 }); // Week starts on Monday
-  const startOfLastFullWeek = subWeeks(startOfThisCalendarWeek, 1);
-  const endOfLastFullWeek = endOfWeek(startOfLastFullWeek, { weekStartsOn: 1 });
+  const todayStart = startOfWeek(today, { weekStartsOn: 1 });
+  const startOfLastFullWeek = subWeeks(todayStart, 1);
+  const endOfLastFullWeek = endOfDay(endOfWeek(startOfLastFullWeek, { weekStartsOn: 1 }));
   return { start: startOfLastFullWeek, end: endOfLastFullWeek, days: 7 };
 }
 
@@ -139,11 +140,13 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || `Failed to fetch app settings from API (status: ${response.status})`);
       }
       const data: AppSettings = await response.json();
-      if (data && typeof data.expiryWarningDays === 'number') {
+      if (data && typeof data.expiryWarningDays === 'number' && typeof data.depletionWarningDays === 'number') {
         setAppSettings(data);
       } else {
-        console.warn("Fetched app settings were invalid, using default.");
+        console.warn("Fetched app settings were invalid or incomplete, using default and attempting to save defaults.");
         setAppSettings(DEFAULT_APP_SETTINGS);
+        // Attempt to save defaults if settings are truly missing/malformed from DB
+        await updateAppSettings(DEFAULT_APP_SETTINGS, false); // Pass false to avoid success toast if this is an initial setup
       }
     } catch (error) {
       console.error("Error fetching app settings:", error);
@@ -152,16 +155,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoadingSettings(false);
     }
-  }, []);
+  }, []); // updateAppSettings removed from dependency array to avoid loop on initial load if settings are bad
 
-  useEffect(() => {
-    fetchProducts();
-    fetchBatches();
-    fetchTransactions();
-    fetchAppSettings();
-  }, [fetchProducts, fetchBatches, fetchTransactions, fetchAppSettings]);
-
-  const updateAppSettings = useCallback(async (newSettings: Partial<AppSettings>) => {
+  const updateAppSettings = useCallback(async (newSettings: Partial<AppSettings>, showSuccessToast = true) => {
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
@@ -174,13 +170,23 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
       const updatedSettingsFromServer: AppSettings = await response.json();
       setAppSettings(updatedSettingsFromServer);
-      toast({ title: "成功", description: "设置已保存。" });
+      if (showSuccessToast) {
+        toast({ title: "成功", description: "设置已保存。" });
+      }
     } catch (error) {
       console.error("Error updating app settings:", error);
       toast({ title: "错误", description: `更新设置失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
       throw error;
     }
   }, []);
+  
+  useEffect(() => {
+    fetchProducts();
+    fetchBatches();
+    fetchTransactions();
+    fetchAppSettings();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Removed dependencies to ensure these fetch only once on mount. fetchAppSettings dependency on updateAppSettings was causing potential loops.
 
   const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>): Promise<Product | undefined> => {
     try {
@@ -219,12 +225,18 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       setProducts(prevProducts =>
         prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
       );
+      // Also update product name in batches if it changed
+      if (updatedProductData.name && updatedProductFromServer.name !== batches.find(b => b.productId === productId)?.productName) {
+          setBatches(prevBatches => 
+              prevBatches.map(b => b.productId === productId ? {...b, productName: updatedProductFromServer.name} : b)
+          );
+      }
       toast({ title: "成功", description: `产品 "${updatedProductFromServer.name}" 已更新。` });
     } catch (error) {
       console.error(`Error editing product ${productId}:`, error);
       toast({ title: "错误", description: `编辑产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
-  }, []);
+  }, [batches]);
 
   const archiveProduct = useCallback(async (productId: string) => {
     try {
@@ -331,6 +343,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (!transactionResponse.ok) {
         const errorData = await transactionResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
         console.error("Batch created, but transaction failed:", errorData.error);
+        // Potentially roll back batch creation or notify user more strongly
         throw new Error(errorData.error || '批次已创建，但其入库交易记录失败');
       }
       const newTransactionFromServer: Transaction = await transactionResponse.json();
@@ -370,7 +383,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       newCalculatedCurrentQuantity = batch.currentQuantity - quantityToOutflow;
-    } else {
+    } else { // Negative quantityToOutflow means correction increase
       newCalculatedCurrentQuantity = batch.currentQuantity + Math.abs(quantityToOutflow);
     }
 
@@ -379,7 +392,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       productName: product.name,
       batchId: batchId,
       type: 'OUT',
-      quantity: Math.abs(quantityToOutflow),
+      quantity: Math.abs(quantityToOutflow), // Store absolute quantity
       timestamp: formatISO(new Date()),
       reason,
       notes,
@@ -388,6 +401,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
 
     try {
+      // 1. Record the transaction
       const transactionResponse = await fetch('/api/transactions', {
         method: 'POST',
         headers: getApiAuthHeaders(),
@@ -399,6 +413,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       }
       const newTransactionFromServer: Transaction = await transactionResponse.json();
 
+      // 2. Update the batch quantity in the database
       const batchUpdateResponse = await fetch(`/api/batches/${batchId}`, {
           method: 'PUT',
           headers: getApiAuthHeaders(),
@@ -407,15 +422,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
       if (!batchUpdateResponse.ok) {
           const errorData = await batchUpdateResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
-          console.error("Transaction recorded, but batch update failed:", errorData.error);
+          console.error("Transaction recorded, but batch update failed in DB:", errorData.error);
+          // Even if DB update fails, update local state to reflect transaction for UI consistency, but warn user.
           setTransactions(prev => [newTransactionFromServer, ...prev].sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()));
-          setBatches(prevBatches => prevBatches.map(b => b.id === batchId ? { ...b, currentQuantity: newCalculatedCurrentQuantity } : b));
-          toast({ title: "警告: 数据可能不一致", description: `交易已记录，但批次 ${batchId} 库存更新失败: ${errorData.error || '未知错误'}。请手动核实。`, variant: "destructive", duration: 10000 });
-          return;
+          setBatches(prevBatches => prevBatches.map(b => b.id === batchId ? { ...b, currentQuantity: newCalculatedCurrentQuantity } : b)); // Optimistic UI update for batch
+          toast({ title: "警告: 数据同步可能不一致", description: `交易已记录，但批次 ${batchId} 库存数据库更新失败: ${errorData.error || '未知错误'}。请手动核实。`, variant: "destructive", duration: 10000 });
+          return; // Or throw error to indicate partial failure
       }
 
       const updatedBatchFromServer: Batch = await batchUpdateResponse.json();
 
+      // 3. Update local state with server-confirmed data
       setTransactions(prev => [newTransactionFromServer, ...prev].sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()));
       setBatches(prevBatches => prevBatches.map(b => b.id === batchId ? updatedBatchFromServer : b));
 
@@ -443,7 +460,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
   const getSingleProductAnalysisSummary = useCallback((productId: string): Pick<ProductStockAnalysis, 'avgDailyConsumption' | 'predictedDepletionDate' | 'daysToDepletion'> | null => {
     const product = products.find(p => p.id === productId);
-    if (!product) return null;
+    if (!product || isLoadingBatches || isLoadingTransactions || isLoadingProducts || isLoadingSettings) return null; // Ensure data is loaded
 
     const { totalQuantity: currentStock } = getProductStockDetails(productId);
     const { start, end, days } = getLastFullWeekDateRange();
@@ -465,11 +482,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       predictedDepletionDate = "已耗尽";
       daysToDepletionNum = 0;
     } else if (avgDailyConsumption <= 0) {
-      predictedDepletionDate = "无消耗"; // Changed from "无法预测..." to be more concise for card
+      predictedDepletionDate = "无消耗";
       daysToDepletionNum = Infinity;
     } else {
       const daysLeft = currentStock / avgDailyConsumption;
-      daysToDepletionNum = Math.round(daysLeft); // Keep as number
+      daysToDepletionNum = Math.round(daysLeft);
       const depletionDate = addDays(new Date(), daysLeft);
       predictedDepletionDate = formatISO(depletionDate, { representation: 'date' });
     }
@@ -479,7 +496,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       predictedDepletionDate,
       daysToDepletion: daysToDepletionNum,
     };
-  }, [products, transactions, getProductStockDetails]);
+  }, [products, transactions, batches, getProductStockDetails, isLoadingBatches, isLoadingTransactions, isLoadingProducts, isLoadingSettings]);
 
 
   return (

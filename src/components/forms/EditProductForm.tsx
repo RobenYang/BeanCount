@@ -16,28 +16,22 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
-import type { Product, ProductCategory } from "@/lib/types";
+import type { Product } from "@/lib/types";
 import { Image as ImageIcon, Camera, XCircle, UploadCloud, Save } from "lucide-react";
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import NextImage from "next/image"; // Renamed to NextImage to avoid conflict
+import NextImage from "next/image";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertTitle, AlertDescription as AlertDesc } from "@/components/ui/alert";
 import { useInventory } from "@/contexts/InventoryContext";
 
-// Schema for editing, category is read-only and not part of the schema for update
+// lowStockThreshold removed from schema
 const editProductFormSchema = z.object({
   name: z.string().min(2, "产品名称至少需要2个字符。"),
   unit: z.string().min(1, "单位为必填项 (例如: kg, liter, pcs)。"),
-  shelfLifeDays: z.coerce.number().int().optional().nullable(), // Nullable for non-ingredients
-  lowStockThreshold: z.coerce
-    .number({ invalid_type_error: "库存预警阈值必须是数字。" })
-    .int("库存预警阈值必须是整数。")
-    .min(0, "库存预警阈值不能为负。"),
+  shelfLifeDays: z.coerce.number().int().optional().nullable(),
   imageUrl: z.string().optional().nullable(),
 }).superRefine((data, ctx) => {
-  // This refine logic needs to access the product's category, which is not in the form data
-  // We'll handle this by ensuring shelfLifeDays is only set if category is INGREDIENT
-  // This check is more for initial data consistency if category were editable
+  // Refinement logic for shelfLifeDays handled based on actual product.category in onSubmit
 });
 
 type EditProductFormValues = z.infer<typeof editProductFormSchema>;
@@ -51,10 +45,9 @@ interface EditProductFormProps {
 export function EditProductForm({ product, isOpen, onClose }: EditProductFormProps) {
   const { editProduct } = useInventory();
   const { toast } = useToast();
-  
+
   const form = useForm<EditProductFormValues>({
     resolver: zodResolver(editProductFormSchema),
-    // Default values will be set by useEffect when product prop changes
   });
 
   const [imageDataUri, setImageDataUri] = useState<string | null>(null);
@@ -65,17 +58,17 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (product) {
+    if (product && isOpen) { // Ensure reset only when modal opens with a product
       form.reset({
         name: product.name,
         unit: product.unit,
         shelfLifeDays: product.category === "INGREDIENT" ? product.shelfLifeDays : null,
-        lowStockThreshold: product.lowStockThreshold,
+        // lowStockThreshold: product.lowStockThreshold, // Removed
         imageUrl: product.imageUrl || null,
       });
       setImageDataUri(product.imageUrl || null);
     }
-  }, [product, form, isOpen]); // isOpen ensures reset when modal reopens with same product initially
+  }, [product, form, isOpen]);
 
   useEffect(() => {
     form.setValue("imageUrl", imageDataUri);
@@ -139,22 +132,21 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
   function onSubmit(data: EditProductFormValues) {
     if (!product) return;
 
-    const productDataToUpdate = {
+    const productDataToUpdate: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>> = {
       name: data.name,
-      // category is not part of form values for update
       unit: data.unit,
-      shelfLifeDays: product.category === "INGREDIENT" ? (data.shelfLifeDays || 0) : null, // Ensure shelfLifeDays is number or null
-      lowStockThreshold: data.lowStockThreshold,
+      shelfLifeDays: product.category === "INGREDIENT" ? (data.shelfLifeDays || 0) : null,
+      // lowStockThreshold: data.lowStockThreshold, // Removed
       imageUrl: imageDataUri,
     };
-    
+
     if (product.category === "INGREDIENT" && (!productDataToUpdate.shelfLifeDays || productDataToUpdate.shelfLifeDays <=0) ) {
         form.setError("shelfLifeDays", {message: "食材的保质期必须是正整数天数。"});
         return;
     }
 
     editProduct(product.id, productDataToUpdate);
-    onClose(); // Close modal on successful save
+    onClose();
   }
 
   if (!isOpen || !product) return null;
@@ -178,7 +170,7 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
                 </FormItem>
               )}
             />
-            
+
             <FormItem>
                 <FormLabel>产品类别 (不可修改)</FormLabel>
                 <Input value={product.category === "INGREDIENT" ? "食材" : "非食材"} readOnly disabled />
@@ -203,8 +195,8 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
                   <FormItem>
                     <FormLabel>标准保质期 (天)</FormLabel>
                     <FormControl>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         value={field.value === undefined || field.value === null ? '' : String(field.value)}
                         onChange={(e) => {
                             const val = e.target.value;
@@ -218,27 +210,7 @@ export function EditProductForm({ product, isOpen, onClose }: EditProductFormPro
               />
             )}
 
-            <FormField
-              control={form.control}
-              name="lowStockThreshold"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>库存预警阈值</FormLabel>
-                  <FormControl>
-                    <Input 
-                      type="number" 
-                      value={field.value === undefined ? '' : String(field.value)}
-                      onChange={(e) => {
-                          const val = e.target.value;
-                          field.onChange(val === '' ? undefined : parseInt(val, 10));
-                      }}
-                    />
-                  </FormControl>
-                  <FormDescription>当此产品库存数量低于或等于此值时，将标记为低库存。</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {/* lowStockThreshold field removed */}
 
             <FormField
               control={form.control}

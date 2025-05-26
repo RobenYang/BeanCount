@@ -8,10 +8,11 @@ import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
 import NextImage from "next/image";
 import { Button } from "../ui/button";
-import { Archive, Package } from "lucide-react";
+import { Archive, Package, AlertTriangle, Hourglass } from "lucide-react"; // Added Hourglass
 import { useState } from "react";
 import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { useInventory } from "@/contexts/InventoryContext";
+import { cn } from "@/lib/utils";
 
 interface ProductSummaryCardProps {
   product: Product;
@@ -30,7 +31,15 @@ function formatProductCategoryForDisplay(category: Product['category']): string 
 
 export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct, analysisData }: ProductSummaryCardProps) {
   const { appSettings } = useInventory();
-  const isLowStock = totalQuantity < product.lowStockThreshold;
+
+  const isDepletingSoon = analysisData?.daysToDepletion !== undefined &&
+                          analysisData.daysToDepletion !== Infinity &&
+                          analysisData.daysToDepletion <= appSettings.depletionWarningDays;
+
+  const isNearingExpiry = product.category === 'INGREDIENT' &&
+                          batches.some(b => b.expiryDate &&
+                                            differenceInDays(parseISO(b.expiryDate), new Date()) >= 0 &&
+                                            differenceInDays(parseISO(b.expiryDate), new Date()) <= appSettings.expiryWarningDays);
 
   const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
@@ -55,7 +64,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                 <Package className="h-5 w-5 text-primary" />
                 {product.name}
               </CardTitle>
-              <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit} (阈值: {product.lowStockThreshold})</CardDescription>
+              <CardDescription>{formatProductCategoryForDisplay(product.category)} - 单位: {product.unit}</CardDescription>
             </div>
             <div className="flex gap-2">
               {onArchiveProduct && !product.isArchived && (
@@ -95,7 +104,12 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           {analysisData ? (
             <>
               <p>日均消耗 (上周): {analysisData.avgDailyConsumption.toFixed(2)} {product.unit}</p>
-              <p>预计耗尽: {' '}
+              <p className={cn(
+                  "font-medium",
+                  isDepletingSoon && "text-destructive font-bold"
+                 )}
+              >
+                预计耗尽: {' '}
                 {analysisData.predictedDepletionDate === "已耗尽" || analysisData.predictedDepletionDate === "无消耗"
                   ? analysisData.predictedDepletionDate
                   : format(parseISO(analysisData.predictedDepletionDate), "yyyy-MM-dd", { locale: zhCN })}
@@ -108,10 +122,16 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
             <p>消耗分析数据不可用。</p>
           )}
         </CardContent>
-        <CardFooter className="pt-2">
-          {isLowStock && <Badge variant="destructive">低库存 (阈值: {product.lowStockThreshold})</Badge>}
-          {isIngredient && batches.some(b => b.expiryDate && differenceInDays(parseISO(b.expiryDate), new Date()) <= appSettings.expiryWarningDays && differenceInDays(parseISO(b.expiryDate), new Date()) >= 0) && !isLowStock && (
-            <Badge variant="outline" className="border-yellow-500 text-yellow-600">临近过期</Badge>
+        <CardFooter className="pt-2 space-x-2">
+          {isDepletingSoon && (
+            <Badge variant="destructive" className="items-center">
+              <Hourglass className="mr-1 h-3 w-3" /> 即将耗尽 (≤{appSettings.depletionWarningDays}天)
+            </Badge>
+          )}
+          {isNearingExpiry && !isDepletingSoon && ( // Show only if not already depleting soon to avoid badge clutter
+            <Badge variant="outline" className="border-orange-500 text-orange-600 items-center">
+              <AlertTriangle className="mr-1 h-3 w-3" /> 临近过期
+            </Badge>
           )}
         </CardFooter>
       </Card>
