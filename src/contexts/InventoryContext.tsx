@@ -136,6 +136,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         depletionWarningDays: newSettings.depletionWarningDays ?? appSettings.depletionWarningDays,
     };
 
+    // Basic client-side validation for required fields
+    if (typeof settingsToUpdate.expiryWarningDays !== 'number' || settingsToUpdate.expiryWarningDays < 0) {
+        toast({ title: "错误", description: "临近过期预警天数必须是一个非负数。", variant: "destructive" });
+        return;
+    }
+    if (typeof settingsToUpdate.depletionWarningDays !== 'number' || settingsToUpdate.depletionWarningDays < 0) {
+        toast({ title: "错误", description: "预计耗尽预警天数必须是一个非负数。", variant: "destructive" });
+        return;
+    }
+
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
@@ -171,7 +181,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from API' }));
         throw new Error(errorData.error || `Failed to fetch app settings from API (status: ${response.status})`);
       }
-      const data: Partial<AppSettings> = await response.json(); // Expect potentially partial data
+      const data: Partial<AppSettings> = await response.json(); 
       
       const fetchedExpiryWarningDays = data.expiryWarningDays;
       const fetchedDepletionWarningDays = data.depletionWarningDays;
@@ -195,9 +205,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       
       setAppSettings(completeSettings);
 
-      if (settingsWereIncomplete && process.env.POSTGRES_URL) { // Only try to save back if using a real DB
+      if (settingsWereIncomplete && process.env.POSTGRES_URL) { 
         console.log("Attempting to save complete default settings back to DB due to incomplete fetch.");
-        // Don't show success toast for this automatic save
         await updateAppSettings(completeSettings, false); 
       }
 
@@ -208,7 +217,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setIsLoadingSettings(false);
     }
-  }, [updateAppSettings]); // Added updateAppSettings to dependency array
+  }, [updateAppSettings]); 
   
   const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>): Promise<Product | undefined> => {
     try {
@@ -246,6 +255,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       await fetchProducts(); 
       const updatedProductName = updatedProductData.name || products.find(p=>p.id === productId)?.name || '产品';
       
+      // If product name changed, batches and transactions with this product name need to be updated or handled
+      // For simplicity, we'll refetch batches and transactions which might have product name updated on server side
+      // if they store product_name.
       await fetchBatches();
       await fetchTransactions();
 
@@ -418,8 +430,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
 
     try {
+      // Step 1: Record the transaction
       await addTransactionAPI(transactionForOutflow);
       
+      // Step 2: Update the batch quantity in the database
       const batchUpdateResponse = await fetch(`/api/batches/${batchId}`, {
           method: 'PUT',
           headers: getApiAuthHeaders(),
@@ -429,12 +443,14 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       if (!batchUpdateResponse.ok) {
           const errorData = await batchUpdateResponse.json().catch(() => ({ error: 'Failed to parse error response from batch update API' }));
           console.error("Transaction recorded, but batch update failed in DB:", errorData.error);
+          // Even if DB update fails, re-fetch to ensure UI consistency (though it might be stale)
           await fetchBatches(); 
           await fetchTransactions();
           toast({ title: "警告: 数据同步可能不一致", description: `交易已记录，但批次 ${batchId} 库存数据库更新失败: ${errorData.error || '未知错误'}。请手动核实。`, variant: "destructive", duration: 10000 });
           return; 
       }
 
+      // Step 3: If both transaction and batch update were successful, refetch data for UI consistency
       await fetchBatches();
       await fetchTransactions();
 
@@ -445,6 +461,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error("Error recording outflow or updating batch:", error);
+      // Refetch in case of any error to try and get the most current state
       await fetchBatches(); 
       await fetchTransactions();
       toast({ title: "错误", description: `记录出库操作失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
@@ -502,7 +519,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       predictedDepletionDate,
       daysToDepletion: daysToDepletionNum,
     };
-  }, [products, transactions, batches, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings, appSettings]);
+  }, [products, transactions, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings, appSettings]);
 
 
   useEffect(() => {
@@ -515,6 +532,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
+  // Sample data initialization removed
+  
   return (
     <InventoryContext.Provider value={{
       products,

@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 import type { AppSettings } from '@/lib/types';
 
+// Ensure this matches your table schema in Neon SQL Editor
 // CREATE TABLE app_settings (
 //     id INTEGER PRIMARY KEY DEFAULT 1,
 //     expiry_warning_days INTEGER NOT NULL DEFAULT 7,
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
       if (freshFetch.rows.length > 0) {
         return NextResponse.json(freshFetch.rows[0]);
       }
+      // If insertion failed or still no row, return defaults
       return NextResponse.json(DEFAULT_DEV_SETTINGS);
     }
     // Ensure both fields are present, even if one was null in DB (e.g. due to older schema)
@@ -75,6 +77,7 @@ export async function GET(request: Request) {
     return NextResponse.json(completeSettings);
   } catch (error) {
     console.error('Failed to fetch app settings from Postgres:', error);
+    // Return defaults on error to allow app to function
     return NextResponse.json(DEFAULT_DEV_SETTINGS, { status: 500 });
   }
 }
@@ -100,6 +103,7 @@ export async function PUT(request: Request) {
   }
 
   try {
+    // Validate that both required fields are present and are numbers
     if (expiryWarningDays === undefined || typeof expiryWarningDays !== 'number' || expiryWarningDays < 0) {
       return NextResponse.json({ error: '有效的临近过期预警天数 (非负数) 为必填项。' }, { status: 400 });
     }
@@ -120,6 +124,8 @@ export async function PUT(request: Request) {
     if (result.rows.length > 0) {
         return NextResponse.json(result.rows[0]);
     }
+    // This case should ideally not be reached if ON CONFLICT DO UPDATE RETURNING works as expected.
+    // If it does, it means the insert/update failed silently or didn't return rows.
     return NextResponse.json({ error: 'Failed to update or insert settings' }, { status: 500 });
 
   } catch (error) {
