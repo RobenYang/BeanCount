@@ -1,36 +1,37 @@
 
 "use client";
 
-import type { Product, Batch } from "@/lib/types";
+import type { Product, Batch, ProductStockAnalysis } from "@/lib/types";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { format, differenceInDays, parseISO } from "date-fns";
 import { zhCN } from 'date-fns/locale';
-import NextImage from "next/image"; 
+import NextImage from "next/image";
 import { Button } from "../ui/button";
 import { Archive, Package } from "lucide-react";
-import { useState } from "react"; 
-import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal"; 
+import { useState } from "react";
+import { ImagePreviewModal } from "@/components/modals/ImagePreviewModal";
 import { useInventory } from "@/contexts/InventoryContext";
 
 interface ProductSummaryCardProps {
   product: Product;
-  batches: Batch[]; // Still needed for nearing expiry badge logic
+  batches: Batch[];
   totalQuantity: number;
   onArchiveProduct?: (productId: string) => void;
+  analysisData?: Pick<ProductStockAnalysis, 'avgDailyConsumption' | 'predictedDepletionDate' | 'daysToDepletion'> | null;
 }
 
 function formatProductCategoryForDisplay(category: Product['category']): string {
     if (category === 'INGREDIENT') return '食材';
     if (category === 'NON_INGREDIENT') return '非食材';
-    return category; 
+    return category;
 }
 
 
-export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct }: ProductSummaryCardProps) {
-  const { appSettings } = useInventory(); 
+export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveProduct, analysisData }: ProductSummaryCardProps) {
+  const { appSettings } = useInventory();
   const isLowStock = totalQuantity < product.lowStockThreshold;
-  
+
   const isIngredient = product.category === 'INGREDIENT';
   const placeholderImage = `https://placehold.co/64x64.png?text=${encodeURIComponent(product.name.substring(0,1))}`;
   const imageSrc = product.imageUrl || placeholderImage;
@@ -38,7 +39,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const handleImageClick = () => {
-    if (product.imageUrl) { 
+    if (product.imageUrl) {
       setIsModalOpen(true);
     }
   };
@@ -50,7 +51,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
         <CardHeader className="pb-2">
           <div className="flex justify-between items-start">
             <div>
-              <CardTitle className="text-lg flex items-center gap-2"> {/* Changed text-xl to text-lg */}
+              <CardTitle className="text-lg flex items-center gap-2">
                 <Package className="h-5 w-5 text-primary" />
                 {product.name}
               </CardTitle>
@@ -79,7 +80,7 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
                 alt={product.name}
                 width={48}
                 height={48}
-                className="object-cover aspect-square" 
+                className="object-cover aspect-square"
                 data-ai-hint="product item"
               />
             </div>
@@ -90,8 +91,22 @@ export function ProductSummaryCard({ product, batches, totalQuantity, onArchiveP
           </div>
 
         </CardHeader>
-        <CardContent className="pt-0 pb-2"> {/* Removed flex-grow and the inner div with min-h */}
-           {/* This content area is now minimal. Badges are in the footer. */}
+        <CardContent className="pt-2 pb-2 text-xs text-muted-foreground min-h-[4rem]">
+          {analysisData ? (
+            <>
+              <p>日均消耗 (上周): {analysisData.avgDailyConsumption.toFixed(2)} {product.unit}</p>
+              <p>预计耗尽: {' '}
+                {analysisData.predictedDepletionDate === "已耗尽" || analysisData.predictedDepletionDate === "无消耗"
+                  ? analysisData.predictedDepletionDate
+                  : format(parseISO(analysisData.predictedDepletionDate), "yyyy-MM-dd", { locale: zhCN })}
+                {analysisData.daysToDepletion !== undefined && analysisData.daysToDepletion !== Infinity && analysisData.daysToDepletion >= 0 && analysisData.predictedDepletionDate !== "已耗尽" && (
+                  <span className="ml-1">({analysisData.daysToDepletion}天)</span>
+                )}
+              </p>
+            </>
+          ) : (
+            <p>消耗分析数据不可用。</p>
+          )}
         </CardContent>
         <CardFooter className="pt-2">
           {isLowStock && <Badge variant="destructive">低库存 (阈值: {product.lowStockThreshold})</Badge>}

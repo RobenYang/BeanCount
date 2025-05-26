@@ -4,7 +4,7 @@
 import { useState, useEffect } from "react";
 import { useInventory } from "@/contexts/InventoryContext";
 import { ProductSummaryCard } from "@/components/cards/ProductSummaryCard";
-import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Loader2, CircleDollarSign, Package as PackageIcon, Smile } from "lucide-react";
+import { AlertTriangle, PackageSearch, Warehouse, TrendingUp, Smile, CircleDollarSign, Package as PackageIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { subDays, parseISO, isWithinInterval, endOfDay, differenceInDays, format } from "date-fns";
-import type { Transaction, Product, Batch } from "@/lib/types";
+import type { Transaction, Product } from "@/lib/types"; // Removed Batch as it's not directly used here after card changes
 import { zhCN } from 'date-fns/locale';
 
 interface LowStockProductDetail {
@@ -22,7 +22,7 @@ interface LowStockProductDetail {
   name: string;
   currentQuantity: number;
   unit: string;
-  threshold: number; // Product-specific threshold
+  threshold: number;
 }
 
 interface NearingExpiryProductDetail {
@@ -33,12 +33,12 @@ interface NearingExpiryProductDetail {
   expiryDate: string;
   daysLeft: number;
   currentQuantity: number;
-  warningDays: number; // Global expiry warning days from appSettings
+  warningDays: number;
 }
 
 
 export default function DashboardPage() {
-  const { products, getProductStockDetails, archiveProduct, transactions, appSettings } = useInventory();
+  const { products, getProductStockDetails, archiveProduct, transactions, appSettings, getSingleProductAnalysisSummary, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings } = useInventory();
   const [hasMounted, setHasMounted] = useState(false);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
   const [currentDateDisplay, setCurrentDateDisplay] = useState("...");
@@ -62,7 +62,7 @@ export default function DashboardPage() {
       transaction.type === 'OUT' &&
       !transaction.isCorrectionIncrease &&
       transaction.unitCostAtTransaction !== undefined &&
-      transaction.unitCostAtTransaction !== null && // Ensure unitCostAtTransaction is not null
+      transaction.unitCostAtTransaction !== null &&
       isWithinInterval(parseISO(transaction.timestamp), { start: sevenDaysAgo, end: today })
     ) {
       return totalValue + (transaction.quantity * transaction.unitCostAtTransaction);
@@ -80,13 +80,13 @@ export default function DashboardPage() {
       const { totalQuantity } = getProductStockDetails(p.id);
       return { product: p, totalQuantity };
     })
-    .filter(({ product, totalQuantity }) => totalQuantity < product.lowStockThreshold) // Use product.lowStockThreshold
+    .filter(({ product, totalQuantity }) => totalQuantity < product.lowStockThreshold)
     .map(({ product, totalQuantity }) => ({
       id: product.id,
       name: product.name,
       currentQuantity: totalQuantity,
       unit: product.unit,
-      threshold: product.lowStockThreshold, // Use product.lowStockThreshold
+      threshold: product.lowStockThreshold,
     }));
 
   const nearingExpiryProductsDetails: NearingExpiryProductDetail[] = activeProducts.flatMap(p => {
@@ -96,7 +96,7 @@ export default function DashboardPage() {
       .filter(b => {
         if (!b.expiryDate) return false;
         const daysLeft = differenceInDays(parseISO(b.expiryDate), new Date());
-        return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays; // appSettings for expiry warning
+        return daysLeft >= 0 && daysLeft <= appSettings.expiryWarningDays;
       })
       .map(b => ({
         productId: p.id,
@@ -113,8 +113,10 @@ export default function DashboardPage() {
   const lowStockItemsCount = lowStockProductsDetails.length;
   const itemsNearingExpiryCount = nearingExpiryProductsDetails.length;
 
+  const isLoadingContextData = isLoadingProducts || isLoadingBatches || isLoadingTransactions || isLoadingSettings;
 
-  if (!hasMounted) {
+
+  if (!hasMounted || isLoadingContextData) {
     return (
       <div className="space-y-6">
         <div className="mb-6 flex items-center text-lg font-medium text-muted-foreground">
@@ -158,10 +160,9 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex-grow pt-0 pb-2">
-                 <div className="h-12 flex items-center justify-center"> 
-                    {/* Adjusted height as batch table is removed */}
-                 </div>
+              <CardContent className="pt-2 pb-2 text-xs text-muted-foreground min-h-[4rem]"> {/* Adjusted min-height */}
+                 <Skeleton className="h-4 w-full mb-1" />
+                 <Skeleton className="h-4 w-2/3" />
               </CardContent>
               <CardFooter className="pt-2">
                 <Skeleton className="h-5 w-20" />
@@ -239,13 +240,15 @@ export default function DashboardPage() {
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {activeProducts.map((product) => {
             const { totalQuantity, batches } = getProductStockDetails(product.id);
+            const analysisSummary = getSingleProductAnalysisSummary(product.id);
             return (
               <ProductSummaryCard
                 key={product.id}
                 product={product}
-                batches={batches} // batches prop is still needed for expiry badge logic
+                batches={batches}
                 totalQuantity={totalQuantity}
                 onArchiveProduct={archiveProduct}
+                analysisData={analysisSummary}
               />
             );
           })}
@@ -348,4 +351,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
