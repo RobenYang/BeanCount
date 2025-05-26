@@ -2,14 +2,14 @@
 "use client";
 
 import type { Product, Batch, Transaction, OutflowReasonValue, AppSettings, ProductStockAnalysis } from '@/lib/types';
-import { nanoid } from 'nanoid';
+// import { nanoid } from 'nanoid'; // No longer used directly in context for IDs
 import React, { createContext, useContext, useState, useEffect, type ReactNode, useCallback } from 'react';
 import { toast } from "@/hooks/use-toast";
-import { formatISO, parseISO, differenceInDays, startOfWeek, endOfWeek, subWeeks, isWithinInterval, addDays, endOfDay } from 'date-fns';
+import { formatISO, parseISO, differenceInDays, startOfWeek, endOfWeek, subWeeks, isWithinInterval, addDays, endOfDay, subDays, eachDayOfInterval } from 'date-fns';
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   expiryWarningDays: 7,
-  depletionWarningDays: 5, // Default depletion warning
+  depletionWarningDays: 5,
 };
 
 // Helper to get the date range for 'LAST_FULL_WEEK'
@@ -130,39 +130,18 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const fetchAppSettings = useCallback(async () => {
-    setIsLoadingSettings(true);
-    try {
-      const response = await fetch('/api/settings', { headers: getApiAuthHeaders() });
-      if (!response.ok) {
-        if (response.status === 401) throw new Error('API: Unauthorized to fetch settings.');
-        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from API' }));
-        throw new Error(errorData.error || `Failed to fetch app settings from API (status: ${response.status})`);
-      }
-      const data: AppSettings = await response.json();
-      if (data && typeof data.expiryWarningDays === 'number' && typeof data.depletionWarningDays === 'number') {
-        setAppSettings(data);
-      } else {
-        console.warn("Fetched app settings were invalid or incomplete, using default and attempting to save defaults.");
-        setAppSettings(DEFAULT_APP_SETTINGS);
-        // Attempt to save defaults if settings are truly missing/malformed from DB
-        await updateAppSettings(DEFAULT_APP_SETTINGS, false); // Pass false to avoid success toast if this is an initial setup
-      }
-    } catch (error) {
-      console.error("Error fetching app settings:", error);
-      toast({ title: "错误", description: `加载应用设置失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
-      setAppSettings(DEFAULT_APP_SETTINGS);
-    } finally {
-      setIsLoadingSettings(false);
-    }
-  }, []); // updateAppSettings removed from dependency array to avoid loop on initial load if settings are bad
+ const updateAppSettings = useCallback(async (newSettings: Partial<AppSettings>, showSuccessToast = true) => {
+    // Ensure depletionWarningDays is part of newSettings or taken from current appSettings
+    const settingsToUpdate: AppSettings = {
+        expiryWarningDays: newSettings.expiryWarningDays ?? appSettings.expiryWarningDays,
+        depletionWarningDays: newSettings.depletionWarningDays ?? appSettings.depletionWarningDays,
+    };
 
-  const updateAppSettings = useCallback(async (newSettings: Partial<AppSettings>, showSuccessToast = true) => {
     try {
       const response = await fetch('/api/settings', {
         method: 'PUT',
         headers: getApiAuthHeaders(),
-        body: JSON.stringify(newSettings),
+        body: JSON.stringify(settingsToUpdate), // Send complete settings object
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from API' }));
@@ -176,18 +155,37 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error("Error updating app settings:", error);
       toast({ title: "错误", description: `更新设置失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
-      throw error;
+      // Do not throw error here to prevent unhandled promise rejection if called from useEffect
     }
-  }, []);
-  
-  useEffect(() => {
-    fetchProducts();
-    fetchBatches();
-    fetchTransactions();
-    fetchAppSettings();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Removed dependencies to ensure these fetch only once on mount. fetchAppSettings dependency on updateAppSettings was causing potential loops.
+  }, [appSettings]); // Added appSettings to dependencies
 
+
+  const fetchAppSettings = useCallback(async () => {
+    setIsLoadingSettings(true);
+    try {
+      const response = await fetch('/api/settings', { headers: getApiAuthHeaders() });
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('API: Unauthorized to fetch settings.');
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from API' }));
+        throw new Error(errorData.error || `Failed to fetch app settings from API (status: ${response.status})`);
+      }
+      const data: AppSettings = await response.json();
+       if (data && typeof data.expiryWarningDays === 'number' && typeof data.depletionWarningDays === 'number') {
+        setAppSettings(data);
+      } else {
+        console.warn("Fetched app settings were invalid or incomplete, using default and attempting to save defaults.", data);
+        setAppSettings(DEFAULT_APP_SETTINGS);
+        await updateAppSettings(DEFAULT_APP_SETTINGS, false);
+      }
+    } catch (error) {
+      console.error("Error fetching app settings:", error);
+      toast({ title: "错误", description: `加载应用设置失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
+      setAppSettings(DEFAULT_APP_SETTINGS);
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  }, [updateAppSettings]);
+  
   const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'createdAt' | 'isArchived'>): Promise<Product | undefined> => {
     try {
       const response = await fetch('/api/products', {
@@ -200,7 +198,8 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || 'Failed to add product via API');
       }
       const newProductFromServer: Product = await response.json();
-      setProducts(prev => [...prev, newProductFromServer].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      // setProducts(prev => [...prev, newProductFromServer].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      await fetchProducts(); // Refetch all products to ensure sorted list and single source of truth
       toast({ title: "成功", description: `产品 "${newProductFromServer.name}" 已添加。` });
       return newProductFromServer;
     } catch (error) {
@@ -208,7 +207,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: "错误", description: `添加产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
       return undefined;
     }
-  }, []);
+  }, [fetchProducts]);
 
   const editProduct = useCallback(async (productId: string, updatedProductData: Partial<Omit<Product, 'id' | 'createdAt' | 'isArchived' | 'category'>>) => {
     try {
@@ -221,22 +220,22 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from API' }));
         throw new Error(errorData.error || `Failed to update product ${productId} via API`);
       }
-      const updatedProductFromServer: Product = await response.json();
-      setProducts(prevProducts =>
-        prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
-      );
-      // Also update product name in batches if it changed
-      if (updatedProductData.name && updatedProductFromServer.name !== batches.find(b => b.productId === productId)?.productName) {
-          setBatches(prevBatches => 
-              prevBatches.map(b => b.productId === productId ? {...b, productName: updatedProductFromServer.name} : b)
-          );
-      }
-      toast({ title: "成功", description: `产品 "${updatedProductFromServer.name}" 已更新。` });
+      // const updatedProductFromServer: Product = await response.json();
+      await fetchProducts(); // Refetch to update list
+      const updatedProductName = updatedProductData.name || products.find(p=>p.id === productId)?.name || '产品';
+      
+      // If product name changed, we should ideally update productName in all its batches and transactions.
+      // For now, just refetching batches to reflect potential name changes from server-side logic if any.
+      await fetchBatches();
+      await fetchTransactions();
+
+
+      toast({ title: "成功", description: `产品 "${updatedProductName}" 已更新。` });
     } catch (error) {
       console.error(`Error editing product ${productId}:`, error);
       toast({ title: "错误", description: `编辑产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
-  }, [batches]);
+  }, [fetchProducts, fetchBatches, fetchTransactions, products]);
 
   const archiveProduct = useCallback(async (productId: string) => {
     try {
@@ -250,15 +249,16 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || `Failed to archive product ${productId} via API`);
       }
       const updatedProductFromServer: Product = await response.json();
-      setProducts(prevProducts =>
-        prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
-      );
+      // setProducts(prevProducts =>
+      //   prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
+      // );
+      await fetchProducts(); // Refetch
       toast({ title: "成功", description: `产品 "${updatedProductFromServer.name}" 已归档。` });
     } catch (error) {
       console.error(`Error archiving product ${productId}:`, error);
       toast({ title: "错误", description: `归档产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
-  }, []);
+  }, [fetchProducts]);
 
   const unarchiveProduct = useCallback(async (productId: string) => {
      try {
@@ -272,15 +272,17 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(errorData.error || `Failed to unarchive product ${productId} via API`);
       }
       const updatedProductFromServer: Product = await response.json();
-      setProducts(prevProducts =>
-        prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
-      );
+      // setProducts(prevProducts =>
+      //   prevProducts.map(p => p.id === productId ? updatedProductFromServer : p)
+      // );
+      await fetchProducts(); // Refetch
       toast({ title: "成功", description: `产品 "${updatedProductFromServer.name}" 已取消归档。` });
     } catch (error) {
       console.error(`Error unarchiving product ${productId}:`, error);
       toast({ title: "错误", description: `取消归档产品失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
-  }, []);
+  }, [fetchProducts]);
+
 
   const getProductById = useCallback((id: string) => {
     return products.find(p => p.id === id);
@@ -292,6 +294,20 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       .sort((a, b) => (a.createdAt && b.createdAt ? parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime() : 0));
     return productBatches.length > 0 ? productBatches[0].unitCost : undefined;
   }, [batches]);
+
+  const addTransactionAPI = useCallback(async (transactionData: Omit<Transaction, 'id'>) => {
+    const response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: getApiAuthHeaders(),
+        body: JSON.stringify(transactionData),
+    });
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from transaction API' }));
+        throw new Error(errorData.error || `Failed to add transaction via API for product ${transactionData.productId}`);
+    }
+    return await response.json() as Transaction;
+  }, []);
+
 
   const addBatch = useCallback(async (batchData: Omit<Batch, 'id' | 'expiryDate' | 'createdAt' | 'currentQuantity' | 'productName'> & { productionDate: string | null }): Promise<Batch | undefined> => {
     const product = getProductById(batchData.productId);
@@ -316,11 +332,12 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!batchResponse.ok) {
-        const errorData = await batchResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
+        const errorData = await batchResponse.json().catch(() => ({ error: 'Failed to parse error response from batch API' }));
         throw new Error(errorData.error || 'Failed to add batch via API');
       }
       const newBatchFromServer: Batch = await batchResponse.json();
-      setBatches(prev => [...prev, newBatchFromServer].sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()));
+      // setBatches(prev => [...prev, newBatchFromServer].sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()));
+      await fetchBatches(); // Refetch
 
       const transactionForNewBatch: Omit<Transaction, 'id'> = {
         productId: newBatchFromServer.productId,
@@ -328,26 +345,14 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         batchId: newBatchFromServer.id,
         type: 'IN',
         quantity: newBatchFromServer.initialQuantity,
-        timestamp: newBatchFromServer.createdAt,
+        timestamp: newBatchFromServer.createdAt, // Use batch creation time for IN transaction
         unitCostAtTransaction: newBatchFromServer.unitCost,
         notes: `批次 ${newBatchFromServer.id} 的初始入库`,
         isCorrectionIncrease: false,
       };
 
-      const transactionResponse = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: getApiAuthHeaders(),
-        body: JSON.stringify(transactionForNewBatch),
-      });
-
-      if (!transactionResponse.ok) {
-        const errorData = await transactionResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
-        console.error("Batch created, but transaction failed:", errorData.error);
-        // Potentially roll back batch creation or notify user more strongly
-        throw new Error(errorData.error || '批次已创建，但其入库交易记录失败');
-      }
-      const newTransactionFromServer: Transaction = await transactionResponse.json();
-      setTransactions(prev => [newTransactionFromServer, ...prev].sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()));
+      await addTransactionAPI(transactionForNewBatch);
+      await fetchTransactions(); // Refetch transactions
 
       toast({ title: "成功", description: `"${newBatchFromServer.productName || product.name}" 的批次已添加。数量: ${newBatchFromServer.initialQuantity}，单位成本: ¥${newBatchFromServer.unitCost.toFixed(2)}` });
       return newBatchFromServer;
@@ -356,7 +361,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: "错误", description: `添加入库批次操作失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
       return undefined;
     }
-  }, [getProductById]);
+  }, [getProductById, fetchBatches, addTransactionAPI, fetchTransactions]);
 
 
   const recordOutflowFromSpecificBatch = useCallback(async (productId: string, batchId: string, quantityToOutflow: number, reason: OutflowReasonValue, notes?: string) => {
@@ -383,7 +388,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
       newCalculatedCurrentQuantity = batch.currentQuantity - quantityToOutflow;
-    } else { // Negative quantityToOutflow means correction increase
+    } else { 
       newCalculatedCurrentQuantity = batch.currentQuantity + Math.abs(quantityToOutflow);
     }
 
@@ -392,7 +397,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       productName: product.name,
       batchId: batchId,
       type: 'OUT',
-      quantity: Math.abs(quantityToOutflow), // Store absolute quantity
+      quantity: Math.abs(quantityToOutflow), 
       timestamp: formatISO(new Date()),
       reason,
       notes,
@@ -401,19 +406,9 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     };
 
     try {
-      // 1. Record the transaction
-      const transactionResponse = await fetch('/api/transactions', {
-        method: 'POST',
-        headers: getApiAuthHeaders(),
-        body: JSON.stringify(transactionForOutflow),
-      });
-      if (!transactionResponse.ok) {
-        const errorData = await transactionResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
-        throw new Error(errorData.error || 'Failed to add outflow transaction via API');
-      }
-      const newTransactionFromServer: Transaction = await transactionResponse.json();
+      await addTransactionAPI(transactionForOutflow);
+      // await fetchTransactions(); // Refetch transactions already done by addTransactionAPI if it internally refetches, or do it after batch update
 
-      // 2. Update the batch quantity in the database
       const batchUpdateResponse = await fetch(`/api/batches/${batchId}`, {
           method: 'PUT',
           headers: getApiAuthHeaders(),
@@ -421,20 +416,21 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!batchUpdateResponse.ok) {
-          const errorData = await batchUpdateResponse.json().catch(() => ({ error: 'Failed to parse error response from API' }));
+          const errorData = await batchUpdateResponse.json().catch(() => ({ error: 'Failed to parse error response from batch update API' }));
+          // Even if DB update fails for batch, transaction was recorded.
+          // To maintain UI consistency with recorded transaction, update local states optimistically but warn user.
           console.error("Transaction recorded, but batch update failed in DB:", errorData.error);
-          // Even if DB update fails, update local state to reflect transaction for UI consistency, but warn user.
-          setTransactions(prev => [newTransactionFromServer, ...prev].sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()));
-          setBatches(prevBatches => prevBatches.map(b => b.id === batchId ? { ...b, currentQuantity: newCalculatedCurrentQuantity } : b)); // Optimistic UI update for batch
+          await fetchBatches(); // Try to refetch to see if somehow it did update or to revert optimistic local change if it fails
+          await fetchTransactions(); // ensure transactions list is up-to-date
           toast({ title: "警告: 数据同步可能不一致", description: `交易已记录，但批次 ${batchId} 库存数据库更新失败: ${errorData.error || '未知错误'}。请手动核实。`, variant: "destructive", duration: 10000 });
-          return; // Or throw error to indicate partial failure
+          return; 
       }
 
-      const updatedBatchFromServer: Batch = await batchUpdateResponse.json();
+      // const updatedBatchFromServer: Batch = await batchUpdateResponse.json();
+      // Update local state with server-confirmed data by refetching
+      await fetchBatches();
+      await fetchTransactions();
 
-      // 3. Update local state with server-confirmed data
-      setTransactions(prev => [newTransactionFromServer, ...prev].sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()));
-      setBatches(prevBatches => prevBatches.map(b => b.id === batchId ? updatedBatchFromServer : b));
 
       const successMsg = quantityToOutflow < 0 ?
         `为批次 ${batchId} 的 "${product.name}" 库存更正 ${Math.abs(quantityToOutflow)} ${product.unit}。原因：${reason}。` :
@@ -443,9 +439,11 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
 
     } catch (error) {
       console.error("Error recording outflow or updating batch:", error);
+      await fetchBatches(); // Attempt to refetch to ensure UI consistency if possible
+      await fetchTransactions();
       toast({ title: "错误", description: `记录出库操作失败: ${error instanceof Error ? error.message : '未知错误'}`, variant: "destructive" });
     }
-  }, [batches, getProductById]);
+  }, [getProductById, batches, addTransactionAPI, fetchBatches, fetchTransactions]);
 
   const getBatchesByProductId = useCallback((productId: string) => {
     return batches.filter(b => b.productId === productId);
@@ -459,8 +457,10 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
   }, [batches]);
 
   const getSingleProductAnalysisSummary = useCallback((productId: string): Pick<ProductStockAnalysis, 'avgDailyConsumption' | 'predictedDepletionDate' | 'daysToDepletion'> | null => {
+    if (isLoadingProducts || isLoadingBatches || isLoadingTransactions || isLoadingSettings) return null; // Ensure all data is loaded
+
     const product = products.find(p => p.id === productId);
-    if (!product || isLoadingBatches || isLoadingTransactions || isLoadingProducts || isLoadingSettings) return null; // Ensure data is loaded
+    if (!product) return null; 
 
     const { totalQuantity: currentStock } = getProductStockDetails(productId);
     const { start, end, days } = getLastFullWeekDateRange();
@@ -487,7 +487,7 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
     } else {
       const daysLeft = currentStock / avgDailyConsumption;
       daysToDepletionNum = Math.round(daysLeft);
-      const depletionDate = addDays(new Date(), daysLeft);
+      const depletionDate = addDays(new Date(), daysLeft); // Use current date for prediction base
       predictedDepletionDate = formatISO(depletionDate, { representation: 'date' });
     }
 
@@ -496,8 +496,195 @@ export const InventoryProvider = ({ children }: { children: ReactNode }) => {
       predictedDepletionDate,
       daysToDepletion: daysToDepletionNum,
     };
-  }, [products, transactions, batches, getProductStockDetails, isLoadingBatches, isLoadingTransactions, isLoadingProducts, isLoadingSettings]);
+  }, [products, transactions, batches, getProductStockDetails, isLoadingProducts, isLoadingBatches, isLoadingTransactions, isLoadingSettings]);
 
+
+  const addSampleDataIfNeeded = useCallback(async () => {
+    if (process.env.NODE_ENV !== 'development') return; // Only in dev
+
+    // Check if already has significant data
+    if (products.length > 2 || batches.length > 5 || transactions.length > 10) {
+        console.log("Sufficient data exists, skipping sample data generation.");
+        return;
+    }
+    
+    console.log("Attempting to add sample data...");
+
+    const today = new Date();
+
+    const sampleProductsData = [
+        { name: "全脂牛奶", category: "INGREDIENT", unit: "升", shelfLifeDays: 7, depletionWarningDays: 3, imageUrl: "https://placehold.co/64x64.png?text=M", notes:"常温奶" },
+        { name: "阿拉比卡咖啡豆", category: "INGREDIENT", unit: "公斤", shelfLifeDays: 90, depletionWarningDays: 14, imageUrl: "https://placehold.co/64x64.png?text=C", notes:"中度烘焙" },
+        { name: "香草糖浆", category: "INGREDIENT", unit: "瓶", shelfLifeDays: 365, depletionWarningDays: 30, imageUrl: "https://placehold.co/64x64.png?text=S" },
+        { name: "马克杯", category: "NON_INGREDIENT", unit: "个", shelfLifeDays: null, depletionWarningDays: 10, imageUrl: "https://placehold.co/64x64.png?text=Mug" },
+    ];
+    
+    const addedProducts: Product[] = [];
+    for (const pData of sampleProductsData) {
+        // Check if product by this name already exists (simple check)
+        const existing = products.find(p => p.name === pData.name);
+        if (existing) {
+            addedProducts.push(existing);
+            continue;
+        }
+        const newProduct = await addProduct({
+            name: pData.name,
+            category: pData.category as ProductCategory,
+            unit: pData.unit,
+            shelfLifeDays: pData.shelfLifeDays,
+            imageUrl: pData.imageUrl,
+        });
+        if (newProduct) addedProducts.push(newProduct);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+    }
+
+    const milkProduct = addedProducts.find(p => p.name === "全脂牛奶");
+    const coffeeProduct = addedProducts.find(p => p.name === "阿拉比卡咖啡豆");
+    const syrupProduct = addedProducts.find(p => p.name === "香草糖浆");
+    const mugProduct = addedProducts.find(p => p.name === "马克杯");
+
+    const sampleBatchesInput: (Omit<Batch, 'id' | 'productName' | 'expiryDate' | 'createdAt' | 'currentQuantity'> & { productionDate: string | null, daysAgo: number, initialQty: number, cost: number })[] = [];
+
+    if (milkProduct) sampleBatchesInput.push({ productId: milkProduct.id, productionDate: formatISO(subDays(today, 30)), initialQty: 20, currentQuantity: 0, unitCost: 6.5, daysAgo: 30, cost: 6.5 });
+    if (milkProduct) sampleBatchesInput.push({ productId: milkProduct.id, productionDate: formatISO(subDays(today, 5)), initialQty: 10, currentQuantity: 0, unitCost: 6.8, daysAgo: 5, cost: 6.8 });
+    if (coffeeProduct) sampleBatchesInput.push({ productId: coffeeProduct.id, productionDate: formatISO(subDays(today, 60)), initialQty: 50, currentQuantity: 0, unitCost: 80, daysAgo: 60, cost: 80 });
+    if (syrupProduct) sampleBatchesInput.push({ productId: syrupProduct.id, productionDate: formatISO(subDays(today, 90)), initialQty: 12, currentQuantity: 0, unitCost: 25, daysAgo: 90, cost: 25 });
+    if (mugProduct) sampleBatchesInput.push({ productId: mugProduct.id, productionDate: formatISO(subDays(today, 15)), initialQty: 24, currentQuantity: 0, unitCost: 15, daysAgo: 15, cost: 15 });
+
+    const addedBatches: Batch[] = [];
+    for (const bData of sampleBatchesInput) {
+        const newB = await addBatch({ 
+            productId: bData.productId, 
+            productionDate: bData.productionDate, 
+            initialQuantity: bData.initialQty, 
+            unitCost: bData.cost 
+        });
+        if (newB) addedBatches.push(newB);
+        await new Promise(resolve => setTimeout(resolve, 50)); // Small delay
+    }
+    
+    // Simulate "last week" consumption transactions
+    const { start: lastWeekStart, end: lastWeekEnd } = getLastFullWeekDateRange();
+    const daysInLastWeek = eachDayOfInterval({ start: lastWeekStart, end: lastWeekEnd });
+    
+    const sampleOutflowTransactions: Omit<Transaction, 'id' | 'productName' | 'timestamp' | 'unitCostAtTransaction'>[] = [];
+    let milkBatchForOutflow = addedBatches.find(b => b.productId === milkProduct?.id && b.initialQuantity === 10); // Use the newer milk batch
+    if (!milkBatchForOutflow) milkBatchForOutflow = addedBatches.find(b => b.productId === milkProduct?.id);
+
+    let coffeeBatchForOutflow = addedBatches.find(b => b.productId === coffeeProduct?.id);
+    let syrupBatchForOutflow = addedBatches.find(b => b.productId === syrupProduct?.id);
+
+    let milkConsumedLastWeekTotal = 0;
+    let coffeeConsumedLastWeekTotal = 0;
+    let syrupConsumedLastWeekTotal = 0;
+
+    // Milk: consume 5 units/day for 3 days last week (total 15)
+    if (milkProduct && milkBatchForOutflow) {
+        for (let i = 0; i < 3; i++) {
+            if (daysInLastWeek[i]) {
+                const qty = 5;
+                sampleOutflowTransactions.push({ productId: milkProduct.id, batchId: milkBatchForOutflow.id, type: 'OUT', quantity: qty, reason: 'SALE', isCorrectionIncrease: false, notes: "示例销售" });
+                milkConsumedLastWeekTotal += qty;
+            }
+        }
+    }
+    // Coffee: consume 2 units/day for 5 days last week (total 10)
+    if (coffeeProduct && coffeeBatchForOutflow) {
+        for (let i = 0; i < 5; i++) {
+             if (daysInLastWeek[i]) {
+                const qty = 2;
+                sampleOutflowTransactions.push({ productId: coffeeProduct.id, batchId: coffeeBatchForOutflow.id, type: 'OUT', quantity: qty, reason: 'SALE', isCorrectionIncrease: false, notes: "示例销售" });
+                coffeeConsumedLastWeekTotal += qty;
+            }
+        }
+    }
+    // Syrup: consume 1 unit/day for 2 days last week (total 2)
+    if (syrupProduct && syrupBatchForOutflow) {
+        for (let i = 0; i < 2; i++) {
+            if (daysInLastWeek[i]) {
+                const qty = 1;
+                sampleOutflowTransactions.push({ productId: syrupProduct.id, batchId: syrupBatchForOutflow.id, type: 'OUT', quantity: qty, reason: 'INTERNAL_USE', isCorrectionIncrease: false, notes: "示例内部使用" });
+                syrupConsumedLastWeekTotal += qty;
+            }
+        }
+    }
+    
+    // Add these OUT transactions via API AND update batch quantities
+    for (const transData of sampleOutflowTransactions) {
+        const product = addedProducts.find(p => p.id === transData.productId);
+        const batch = addedBatches.find(b => b.id === transData.batchId);
+        if (product && batch) {
+            const transactionFull: Omit<Transaction, 'id'> = {
+                ...transData,
+                productName: product.name,
+                timestamp: formatISO(daysInLastWeek[Math.floor(Math.random() * daysInLastWeek.length)]), // Random day last week
+                unitCostAtTransaction: batch.unitCost,
+            };
+            await addTransactionAPI(transactionFull);
+            
+            // Update batch quantity in DB
+            const newQuantity = batch.currentQuantity - transData.quantity; // batch.currentQuantity here might be stale if multiple trans for same batch
+                                                                        // It's better to fetch the batch again or rely on API to handle atomic updates
+                                                                        // For sample data, this approximation might lead to slight inaccuracies if not careful
+                                                                        // Let's assume addTransactionAPI (and subsequent fetchBatches) is enough for now or fix in PUT
+            
+            // To properly update batch quantity, we need to fetch its current state first, or the PUT API should handle decrement.
+            // The recordOutflowFromSpecificBatch already does this PUT.
+            // For simplicity in sample data, we are directly calling addTransactionAPI.
+            // This means the batch quantity in DB isn't reduced by these sample OUT transactions yet.
+            // THIS IS THE CORE ISSUE. We need to call the PUT /api/batches/[batchId]
+        }
+    }
+
+    // Correctly update batch quantities in DB AFTER conceptualizing outflows
+    if (milkBatchForOutflow && milkConsumedLastWeekTotal > 0) {
+        const finalMilkQty = milkBatchForOutflow.initialQuantity - milkConsumedLastWeekTotal;
+        await fetch(`/api/batches/${milkBatchForOutflow.id}`, {
+            method: 'PUT', headers: getApiAuthHeaders(), body: JSON.stringify({ currentQuantity: Math.max(0, finalMilkQty) })
+        });
+    }
+    if (coffeeBatchForOutflow && coffeeConsumedLastWeekTotal > 0) {
+        const finalCoffeeQty = coffeeBatchForOutflow.initialQuantity - coffeeConsumedLastWeekTotal;
+        await fetch(`/api/batches/${coffeeBatchForOutflow.id}`, {
+            method: 'PUT', headers: getApiAuthHeaders(), body: JSON.stringify({ currentQuantity: Math.max(0, finalCoffeeQty) })
+        });
+    }
+    if (syrupBatchForOutflow && syrupConsumedLastWeekTotal > 0) {
+        const finalSyrupQty = syrupBatchForOutflow.initialQuantity - syrupConsumedLastWeekTotal;
+         await fetch(`/api/batches/${syrupBatchForOutflow.id}`, {
+            method: 'PUT', headers: getApiAuthHeaders(), body: JSON.stringify({ currentQuantity: Math.max(0, finalSyrupQty) })
+        });
+    }
+
+
+    // Refetch all data to reflect sample data additions and updates
+    await fetchProducts();
+    await fetchBatches();
+    await fetchTransactions();
+    console.log("Sample data generation complete.");
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addProduct, addBatch, addTransactionAPI, products, batches, transactions, fetchProducts, fetchBatches, fetchTransactions ]); // Dependencies need to be robust
+
+
+  useEffect(() => {
+    // Initial data fetch
+    Promise.all([
+        fetchProducts(),
+        fetchBatches(),
+        fetchTransactions(),
+        fetchAppSettings()
+    ]).then(() => {
+        // Conditional sample data generation after initial fetch completes and if products are empty
+        // This check 'products.length === 0' in addSampleDataIfNeeded will use the state *before* this .then()
+        // So, we need to pass the fetched products or adjust the condition.
+        // For now, let addSampleDataIfNeeded handle its own checks based on current context state.
+        if (process.env.NODE_ENV === 'development') {
+           // addSampleDataIfNeeded(); // Removed auto-add
+        }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Removed dependencies to ensure these fetch only once on mount.
 
   return (
     <InventoryContext.Provider value={{
@@ -534,3 +721,4 @@ export const useInventory = () => {
   }
   return context;
 };
+
